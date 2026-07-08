@@ -1,25 +1,34 @@
-/* 班費紀錄系統 — 湖綠與琥珀金風格 CSS 設計系統 */
+/* 班費紀錄系統 — 森林綠與琥珀金風格 CSS 設計系統 */
 
 :root {
-  --primary: #1a5d57;        /* 深湖綠 */
-  --primary-dark: #11423e;   /* 極深湖綠 */
-  --primary-light: #e7f0ef;  /* 淺粉綠 */
-  --accent: #c8862a;         /* 亮金橙/琥珀黃 */
+  /* 主色系：深墨森林綠 (對標 #1a3326) */
+  --primary: #1e4232;        /* 森林綠 (Header) */
+  --primary-dark: #152e22;   /* 最深森林綠 */
+  --primary-mid: #2a5c3a;    /* 中深綠（按鈕、重點） */
+  --primary-light: #e8f0eb;  /* 淡綠背景 */
   
-  --bg: #f4f6f7;             /* 淡灰綠 */
-  --card: #ffffff;           /* 卡片白色 */
-  --text: #243231;           /* 炭黑 */
-  --text-soft: #5b6c6a;      /* 灰綠 text */
-  --border: #dde4e3;         /* 淡灰邊框 */
+  /* 強調色：琥珀金橙色 */
+  --accent: #c8860e;         /* 琥珀金橙（主要強調） */
+  --accent-light: #f5e8cf;   /* 淡金色背景 */
+  --border-gold: #c9a870;    /* 暖金色場結裟 */
   
-  --green: #2e7d32;          /* 收入綠 */
+  /* 背景與卡片 */
+  --bg: #f6f7f4;             /* 淡米白綠背景 */
+  --bg-card: #ffffff;
+  --card: #ffffff;
+  --text: #1a2b22;           /* 深墨綠黑 (readable) */
+  --text-soft: #4a6355;      /* 灰綠文字 */
+  --border: #d9e4dd;         /* 淡綠點邊框 */
+  
+  /* 狀態色 */
+  --green: #2a6e30;          /* 收入綠 */
   --amber: #b26a00;          /* 警示橙 */
-  --red: #c62828;            /* 支出紅 */
+  --red: #b83232;            /* 支出紅 */
   
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 3px rgba(20, 40, 38, 0.08), 0 4px 12px rgba(20, 40, 38, 0.04);
-  --shadow-lg: 0 10px 25px -5px rgba(20, 40, 38, 0.1), 0 8px 10px -6px rgba(20, 40, 38, 0.05);
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 4px rgba(20, 50, 30, 0.07), 0 4px 14px rgba(20, 50, 30, 0.04);
+  --shadow-lg: 0 8px 28px -4px rgba(20, 50, 30, 0.12), 0 4px 10px -4px rgba(20, 50, 30, 0.06);
   
   --font-main: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: 'Space Mono', monospace;
@@ -37,12 +46,13 @@ body {
 
 /* 頂部 Sticky Header */
 header {
-  background: var(--primary);
+  background: var(--primary-dark);
   color: #fff;
   position: sticky;
   top: 0;
   z-index: 50;
-  box-shadow: 0 2px 8px rgba(20, 40, 38, 0.15);
+  box-shadow: 0 2px 12px rgba(21, 46, 34, 0.25);
+  border-bottom: 2px solid rgba(200, 134, 14, 0.3);
 }
 
 .header-inner {
@@ -96,11 +106,11 @@ nav button:hover {
 }
 
 nav button.active {
-  background: #fff;
-  color: var(--primary);
+  background: var(--accent);
+  color: #fff;
   font-weight: 700;
-  border-color: #fff;
-  box-shadow: 0 2px 6px rgba(20, 40, 38, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(200, 134, 14, 0.35);
 }
 
 /* 主內容區域 */
@@ -124,14 +134,14 @@ nav button.active {
   padding: 24px 20px 60px;
 }
 
-/* 班級大卡片 (裝飾條改在頂部) */
+/* 班級大卡片 */
 .cfl-cover {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-top: 4px solid var(--accent); /* 琥珀金頂部裝飾條 */
+  border: 1.5px solid var(--border-gold);
+  border-top: 5px solid var(--accent);
   border-radius: var(--radius);
   padding: 28px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(201, 168, 112, 0.15);
   position: relative;
   overflow: hidden;
   margin-bottom: 24px;
@@ -145,19 +155,20 @@ nav button.active {
 }
 
 .cfl-classname {
-  font-size: 14px;
-  letter-spacing: 0.1em;
-  color: var(--text-soft);
-  font-weight: 700;
+  font-size: 72px;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  font-weight: 800;
   display: flex;
   align-items: center;
   gap: 8px;
+  line-height: 1.1;
 }
 
 .cfl-classname-input {
   font-family: inherit;
-  font-size: 13.5px;
-  font-weight: 500;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text);
   background: #fff;
   border: 1px solid var(--border);
@@ -278,50 +289,170 @@ nav button.active {
   color: var(--red);
 }
 
-/* 統計卡片 */
-.cfl-stat-row {
+/* ==========================================
+   全新 Dashboard 三卡片佈局
+   ========================================== */
+
+.cfl-dashboard {
+  margin-top: 22px;
   display: flex;
-  gap: 16px;
-  margin-top: 20px;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.cfl-stat {
-  background: #fafafa;
+/* 中間：餘額主卡 */
+.cfl-dash-main {
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+  border-radius: var(--radius);
+  padding: 22px 24px 20px;
+  color: #fff;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(26, 93, 87, 0.35);
+}
+
+.cfl-dash-main::before {
+  content: '';
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cfl-dash-main::after {
+  content: '';
+  position: absolute;
+  bottom: -20px;
+  right: 40px;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cfl-dash-main.neg {
+  background: linear-gradient(135deg, #8b1a1a 0%, #c62828 100%);
+  box-shadow: 0 6px 24px rgba(198, 40, 40, 0.35);
+}
+
+.cfl-dash-main-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-bottom: 6px;
+}
+
+.cfl-dash-main-value {
+  font-size: 38px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+
+/* 進度條：支出佔收入比 */
+.cfl-dash-progress-wrap {
+  margin-top: 16px;
+}
+
+.cfl-dash-progress-track {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 99px;
+  height: 6px;
+  overflow: hidden;
+}
+
+.cfl-dash-progress-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+
+.cfl-dash-progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,0.5));
+  border-radius: 99px;
+  width: 100%;
+}
+
+.cfl-dash-progress-label {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.7;
+  margin-top: 6px;
+  letter-spacing: 0.03em;
+}
+
+/* 左右小卡 */
+.cfl-dash-side-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.cfl-dash-side {
+  background: var(--card);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 12px 16px;
-  flex: 1;
+  border-radius: var(--radius);
+  padding: 14px 16px;
   box-shadow: var(--shadow);
-  transition: all 0.2s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.cfl-stat:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(20, 40, 38, 0.06);
+.cfl-dash-side:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(20, 40, 38, 0.08);
 }
 
-.cfl-stat-top {
+.cfl-dash-side.income {
+  border-top: 3px solid var(--green);
+}
+
+.cfl-dash-side.expense {
+  border-top: 3px solid var(--red);
+}
+
+.cfl-dash-side-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-soft);
-}
-
-.cfl-stat-num {
-  font-size: 20px;
+  gap: 5px;
+  font-size: 11.5px;
   font-weight: 700;
-  margin-top: 4px;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+  margin-bottom: 6px;
 }
 
-.cfl-stat-num.income {
+.cfl-dash-side.income .cfl-dash-side-label {
   color: var(--green);
 }
 
-.cfl-stat-num.expense {
+.cfl-dash-side.expense .cfl-dash-side-label {
   color: var(--red);
 }
+
+.cfl-dash-side-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.cfl-dash-side.income .cfl-dash-side-value {
+  color: var(--green);
+}
+
+.cfl-dash-side.expense .cfl-dash-side-value {
+  color: var(--red);
+}
+
 
 .cfl-note {
   font-size: 13px;
@@ -772,6 +903,75 @@ nav button.active {
   color: var(--text);
 }
 
+/* ==========================================
+   SVG 圓餅圖樣式
+   ========================================== */
+.cfl-pie-card {
+  margin-top: 28px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 28px;
+  box-shadow: var(--shadow);
+}
+
+.cfl-pie-layout {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.cfl-pie-svg {
+  width: 180px;
+  height: 180px;
+  flex-shrink: 0;
+}
+
+.cfl-pie-legend {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cfl-pie-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.cfl-pie-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.cfl-pie-legend-label {
+  flex: 1;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.cfl-pie-legend-pct {
+  font-weight: 700;
+  color: var(--text-soft);
+  font-size: 12px;
+  min-width: 30px;
+  text-align: right;
+}
+
+.cfl-pie-legend-amt {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 12.5px;
+  min-width: 64px;
+  text-align: right;
+}
+
 /* 同步狀態提示列 */
 .cfl-sync-status-row {
   display: flex;
@@ -988,4 +1188,71 @@ nav button.active {
   .cfl-bar-label {
     width: 76px;
   }
+}
+
+/* 班費分析總覽（合併圈餅圖 + 趨勢圖） */
+.cfl-analysis-card {
+  background: var(--card);
+  border: 1.5px solid var(--border-gold);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-top: 20px;
+  box-shadow: var(--shadow);
+}
+
+.cfl-analysis-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary-dark);
+  margin-bottom: 18px;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cfl-analysis-title::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 16px;
+  background: var(--accent);
+  border-radius: 99px;
+}
+
+.cfl-analysis-section {
+  margin-top: 4px;
+  padding-bottom: 18px;
+}
+
+.cfl-analysis-section:last-child {
+  padding-bottom: 0;
+}
+
+.cfl-analysis-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.cfl-warning-box {
+  background: rgba(220, 100, 50, 0.06);
+  border: 1px dashed rgba(220, 100, 50, 0.35);
+  border-radius: var(--radius-sm);
+  color: #ba5017;
+  padding: 12px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.5;
+}
+
+.cfl-warning-box span {
+  flex: 1;
 }
