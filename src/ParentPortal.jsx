@@ -99,6 +99,10 @@ export default function ParentPortal() {
       setError('請輸入座號與 PIN 碼');
       return;
     }
+    if (pin.trim().length !== 4) {
+      setError('PIN 碼必須為 4 位數字');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -146,7 +150,7 @@ export default function ParentPortal() {
           <Lock size={22} color="var(--primary)" />
           <h1 style={styles.title}>班費查詢</h1>
         </div>
-        <p style={styles.subtitle}>輸入您孩子的座號與 PIN 碼查看繳費狀態。第一次登入將自動建立 PIN，請務必記住。</p>
+        <p style={styles.subtitle}>輸入您孩子的座號與 4 位數 PIN 碼查看繳費狀態。第一次登入將自動建立 PIN，請務必記住。</p>
 
         <form onSubmit={handleLogin} style={styles.form}>
           <label style={styles.label}>
@@ -156,20 +160,26 @@ export default function ParentPortal() {
               type="text"
               inputMode="numeric"
               value={seat}
-              onChange={(ev) => setSeat(ev.target.value)}
+              onChange={(ev) => setSeat(ev.target.value.replace(/\D/g, ''))}
               placeholder="例如：13"
               autoComplete="off"
             />
           </label>
           <label style={styles.label}>
-            PIN 碼
+            PIN 碼 (4 位數字)
             <input
               style={styles.input}
               type="password"
               inputMode="numeric"
+              maxLength={4}
               value={pin}
-              onChange={(ev) => setPin(ev.target.value)}
-              placeholder="第一次登入將自動建立"
+              onChange={(ev) => {
+                const val = ev.target.value.replace(/\D/g, '');
+                if (val.length <= 4) {
+                  setPin(val);
+                }
+              }}
+              placeholder="第一次登入將自動建立 (4 位數)"
               autoComplete="off"
             />
           </label>
@@ -209,7 +219,7 @@ function PaymentStatusView({ view, justCreatedPin, onLogout }) {
         {justCreatedPin && (
           <div style={styles.noticeBox}>
             <ShieldCheck size={16} />
-            <span>PIN 碼已建立，請記住這組 PIN，之後查詢會用到。</span>
+            <span>PIN 碼已建立，請記住這組 4 位數 PIN 碼，之後查詢會用到。</span>
           </div>
         )}
 
