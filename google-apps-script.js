@@ -494,77 +494,69 @@ function formatJSDate(val) {
 }
 
 // 輔助函式：自動建立並補齊第一個工作表的欄位標頭、總額公式與排版格式
+// 使用「只初始化一次」防衛邏輯：若 A1 已有內容則直接跳過，避免每次同步都呼叫大量 Sheets API
 function setupSheetHeadersAndFormulas(sheet) {
   try {
-    // 1. 設定大標題
+    // 檢查 A1 是否已有值，有值代表已初始化，直接略過所有設定
+    var existingA1 = sheet.getRange("A1").getValue();
+    if (existingA1 && String(existingA1).trim() !== "") {
+      return;
+    }
+
+    // ── 以下只有在試算表首次建立時才會執行 ──
+
+    // 1. 大標題
     var rA1 = sheet.getRange("A1");
     rA1.setValue("導師班級班費紀錄表");
     rA1.setFontWeight("bold");
     rA1.setFontSize(13);
-    
-    // 2. 設定統計資訊與公式（若尚未寫入）
+
+    // 2. 統計公式
     var rA2 = sheet.getRange("A2");
     rA2.setValue("總收入：");
     rA2.setFontWeight("bold");
-    
+
     var rB2 = sheet.getRange("B2");
     rB2.setFormula("=SUM(C5:C1000)");
     rB2.setFontWeight("bold");
-    
+
     var rC2 = sheet.getRange("C2");
     rC2.setValue("總支出：");
     rC2.setFontWeight("bold");
-    
+
     var rD2 = sheet.getRange("D2");
     rD2.setFormula("=SUM(K5:K1000)");
     rD2.setFontWeight("bold");
-    
+
     var rF2 = sheet.getRange("F2");
     rF2.setValue("班費結餘：");
     rF2.setFontWeight("bold");
-    
+
     var rG2 = sheet.getRange("G2");
     rG2.setFormula("=B2-D2");
     rG2.setFontWeight("bold");
     rG2.setFontColor("#2d6a4f");
-    
-    // 3. 設定第 4 列欄位標頭與背景色
-    var incomeHeaders = [["日期", "來源/項目", "金額", "座號"]];
+
+    // 3. 第 4 列欄位標頭
     var rIncHead = sheet.getRange(4, 1, 1, 4);
-    rIncHead.setValues(incomeHeaders);
+    rIncHead.setValues([["日期", "來源/項目", "金額", "座號"]]);
     rIncHead.setFontWeight("bold");
     rIncHead.setBackground("#e8f5e9");
-    
+
     var rSep = sheet.getRange(4, 5);
     rSep.setValue(" ");
-    rSep.setBackground("#f5f5f5"); // 分隔欄背景灰色
-    
-    var expenseHeaders = [["日期", "類別", "項目", "單價", "數量", "金額", "取款人", "座號"]];
+    rSep.setBackground("#f5f5f5");
+
     var rExpHead = sheet.getRange(4, 6, 1, 8);
-    rExpHead.setValues(expenseHeaders);
+    rExpHead.setValues([["日期", "類別", "項目", "單價", "數量", "金額", "取款人", "座號"]]);
     rExpHead.setFontWeight("bold");
     rExpHead.setBackground("#ffebee");
-    
-    // 後設資料標頭（隱藏或輔助分析用）
-    var rTermInc = sheet.getRange(4, 14);
-    rTermInc.setValue("學期 (收)");
-    rTermInc.setFontWeight("bold");
-    rTermInc.setBackground("#e8f5e9");
-    
-    var rNoteInc = sheet.getRange(4, 15);
-    rNoteInc.setValue("備註 (收)");
-    rNoteInc.setFontWeight("bold");
-    rNoteInc.setBackground("#e8f5e9");
-    
-    var rTermExp = sheet.getRange(4, 16);
-    rTermExp.setValue("學期 (支)");
-    rTermExp.setFontWeight("bold");
-    rTermExp.setBackground("#ffebee");
-    
-    var rNoteExp = sheet.getRange(4, 17);
-    rNoteExp.setValue("備註 (支)");
-    rNoteExp.setFontWeight("bold");
-    rNoteExp.setBackground("#ffebee");
+
+    sheet.getRange(4, 14).setValue("學期 (收)").setFontWeight("bold").setBackground("#e8f5e9");
+    sheet.getRange(4, 15).setValue("備註 (收)").setFontWeight("bold").setBackground("#e8f5e9");
+    sheet.getRange(4, 16).setValue("學期 (支)").setFontWeight("bold").setBackground("#ffebee");
+    sheet.getRange(4, 17).setValue("備註 (支)").setFontWeight("bold").setBackground("#ffebee");
+
   } catch (err) {
     Logger.log("setupSheetHeadersAndFormulas error: " + err.toString());
   }
