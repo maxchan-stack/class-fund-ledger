@@ -102,11 +102,15 @@ export default function ParentPortal() {
 
     setLoading(true);
     try {
-      const res = await fetch(sheetUrl, {
-        method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'parentAuth', seat: seat.trim(), pin: pin.trim() })
+      const queryParams = new URLSearchParams({
+        action: 'parentAuth',
+        seat: seat.trim(),
+        pin: pin.trim()
+      });
+      const separator = sheetUrl.includes('?') ? '&' : '?';
+      const res = await fetch(`${sheetUrl}${separator}${queryParams.toString()}`, {
+        method: 'GET',
+        mode: 'cors'
       });
       const json = await res.json();
       if (!json.success) {

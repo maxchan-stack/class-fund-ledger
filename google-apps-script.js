@@ -20,6 +20,24 @@ function doGet(e) {
   try {
     var ss = getActiveSpreadsheetWithFallback(e);
     
+    // 解析參數，支援家長端 GET 請求驗證
+    var action = e && e.parameter && e.parameter.action ? e.parameter.action : "";
+    
+    if (action === "parentAuth") {
+      var seat = e && e.parameter && e.parameter.seat ? String(e.parameter.seat) : "";
+      var pin = e && e.parameter && e.parameter.pin ? String(e.parameter.pin) : "";
+      var termParam = e && e.parameter && e.parameter.term ? String(e.parameter.term) : "";
+      
+      if (!seat || !pin) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "請提供座號與 PIN 碼" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      var authResult = parentAuth(ss, seat, pin, termParam);
+      return ContentService.createTextOutput(JSON.stringify(authResult))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
     // 讀取第一個工作表作為主帳本
     var sheet = ss.getSheets()[0];
     var lastRow = sheet.getLastRow();
