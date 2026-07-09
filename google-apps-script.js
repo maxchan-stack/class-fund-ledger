@@ -40,6 +40,7 @@ function doGet(e) {
     
     // 讀取第一個工作表作為主帳本
     var sheet = ss.getSheets()[0];
+    setupSheetHeadersAndFormulas(sheet);
     var lastRow = sheet.getLastRow();
     
     var transactions = readAllTransactions(sheet);
@@ -70,6 +71,7 @@ function doPost(e) {
     
     if (action === "sync" || action === "push") {
       var sheet = ss.getSheets()[0];
+      setupSheetHeadersAndFormulas(sheet);
       
       // 1. 寫入交易紀錄（分流寫入主帳本，採局部區塊寫入，避免互相覆蓋欄位）
       if (postData.transactions) {
@@ -481,4 +483,35 @@ function formatJSDate(val) {
   }
   str = str.replace(/\//g, "-");
   return str;
+}
+
+// 輔助函式：自動建立並補齊第一個工作表的欄位標頭、總額公式與排版格式
+function setupSheetHeadersAndFormulas(sheet) {
+  // 1. 設定大標題
+  sheet.getRange("A1").setValue("導師班級班費紀錄表").setFontWeight("bold").setFontSize(13);
+  
+  // 2. 設定統計資訊與公式（若尚未寫入）
+  sheet.getRange("A2").setValue("總收入：").setFontWeight("bold");
+  sheet.getRange("B2").setFormula("=SUM(C5:C1000)").setFontWeight("bold");
+  
+  sheet.getRange("C2").setValue("總支出：").setFontWeight("bold");
+  sheet.getRange("D2").setFormula("=SUM(K5:K1000)").setFontWeight("bold");
+  
+  sheet.getRange("F2").setValue("班費結餘：").setFontWeight("bold");
+  sheet.getRange("G2").setFormula("=B2-D2").setFontWeight("bold").setFontColor("#2d6a4f");
+  
+  // 3. 設定第 4 列欄位標頭與背景色
+  var incomeHeaders = [["日期", "來源/項目", "金額", "座號"]];
+  sheet.getRange(4, 1, 1, 4).setValues(incomeHeaders).setFontWeight("bold").setBackground("#e8f5e9");
+  
+  sheet.getRange(4, 5).setValue(" ").setBackground("#f5f5f5"); // 分隔欄背景灰色
+  
+  var expenseHeaders = [["日期", "類別", "項目", "單價", "數量", "金額", "取款人", "座號"]];
+  sheet.getRange(4, 6, 1, 8).setValues(expenseHeaders).setFontWeight("bold").setBackground("#ffebee");
+  
+  // 後設資料標頭（隱藏或輔助分析用）
+  sheet.getRange(4, 14).setValue("學期 (收)").setFontWeight("bold").setBackground("#e8f5e9");
+  sheet.getRange(4, 15).setValue("備註 (收)").setFontWeight("bold").setBackground("#e8f5e9");
+  sheet.getRange(4, 16).setValue("學期 (支)").setFontWeight("bold").setBackground("#ffebee");
+  sheet.getRange(4, 17).setValue("備註 (支)").setFontWeight("bold").setBackground("#ffebee");
 }
