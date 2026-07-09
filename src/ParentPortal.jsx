@@ -192,8 +192,16 @@ export default function ParentPortal() {
 }
 
 function PaymentStatusView({ view, justCreatedPin, onLogout }) {
+  const [ledgerTab, setLedgerTab] = React.useState('income');
   const status = STATUS_LABEL[view.myChild.payment.status] || STATUS_LABEL.unpaid;
   const { amountDue, amountPaid } = view.myChild.payment;
+
+  const incomeEntries = view.classLedger.filter(e => e.type === 'income');
+  const expenseEntries = view.classLedger.filter(e => e.type === 'expense');
+  const visibleEntries = ledgerTab === 'income' ? incomeEntries : expenseEntries;
+
+  const incomeTotal = incomeEntries.reduce((s, e) => s + e.amount, 0);
+  const expenseTotal = expenseEntries.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div style={styles.page}>
@@ -223,9 +231,33 @@ function PaymentStatusView({ view, justCreatedPin, onLogout }) {
 
         <h2 style={styles.sectionTitle}>班費收支明細</h2>
         <p style={styles.sectionHint}>僅顯示金額與項目，不顯示個人資訊</p>
+
+        <div style={styles.tabBar}>
+          <button
+            type="button"
+            style={{ ...styles.tabBtn, ...(ledgerTab === 'income' ? styles.tabBtnActive : {}) }}
+            onClick={() => setLedgerTab('income')}
+          >
+            <TrendingUp size={14} />
+            收入 · NT$ {incomeTotal.toLocaleString()}
+          </button>
+          <button
+            type="button"
+            style={{ ...styles.tabBtn, ...(ledgerTab === 'expense' ? styles.tabBtnActiveExpense : {}) }}
+            onClick={() => setLedgerTab('expense')}
+          >
+            <TrendingDown size={14} />
+            支出 · NT$ {expenseTotal.toLocaleString()}
+          </button>
+        </div>
+
         <div style={styles.ledgerList}>
-          {view.classLedger.length === 0 && <p style={styles.emptyText}>目前尚無收支紀錄</p>}
-          {view.classLedger.map((entry) => (
+          {visibleEntries.length === 0 && (
+            <p style={styles.emptyText}>
+              {ledgerTab === 'income' ? '目前尚無收入紀錄' : '目前尚無支出紀錄'}
+            </p>
+          )}
+          {visibleEntries.map((entry) => (
             <div key={entry.id} style={styles.ledgerRow}>
               <div style={styles.ledgerIcon}>
                 {entry.type === 'income'
@@ -233,7 +265,9 @@ function PaymentStatusView({ view, justCreatedPin, onLogout }) {
                   : <TrendingDown size={16} color="var(--red)" />}
               </div>
               <div style={styles.ledgerMain}>
-                <div style={styles.ledgerTitle}>{entry.type === 'income' ? '班費收入' : (entry.category || entry.item || '支出')}</div>
+                <div style={styles.ledgerTitle}>
+                  {entry.type === 'income' ? '班費收入' : (entry.category || entry.item || '支出')}
+                </div>
                 <div style={styles.ledgerDate}>{entry.date}{entry.note ? ` · ${entry.note}` : ''}</div>
               </div>
               <div style={{ ...styles.ledgerAmount, color: entry.type === 'income' ? 'var(--green)' : 'var(--red)' }}>
@@ -314,8 +348,24 @@ const styles = {
   },
   statusRow: { display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0', color: 'var(--text-soft)' },
   sectionTitle: { fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px' },
-  sectionHint: { fontSize: 12, color: 'var(--text-soft)', margin: '0 0 12px' },
-  ledgerList: { display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 320, overflowY: 'auto' },
+  sectionHint: { fontSize: 12, color: 'var(--text-soft)', margin: '0 0 10px' },
+  tabBar: {
+    display: 'flex', gap: 8, marginBottom: 12
+  },
+  tabBtn: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    padding: '9px 12px', borderRadius: 'var(--radius-sm)',
+    border: '1.5px solid var(--border)', background: 'var(--bg)',
+    fontSize: 13, fontWeight: 600, color: 'var(--text-soft)',
+    cursor: 'pointer', transition: 'all 0.15s'
+  },
+  tabBtnActive: {
+    borderColor: 'var(--green)', background: 'rgba(45,106,79,0.08)', color: 'var(--green)'
+  },
+  tabBtnActiveExpense: {
+    borderColor: 'var(--red)', background: 'rgba(184,50,50,0.08)', color: 'var(--red)'
+  },
+  ledgerList: { display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto' },
   emptyText: { fontSize: 13, color: 'var(--text-soft)', textAlign: 'center', padding: '20px 0' },
   ledgerRow: {
     display: 'flex', alignItems: 'center', gap: 10,
