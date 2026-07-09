@@ -239,6 +239,45 @@ function PaymentStatusView({ view, justCreatedPin, onLogout }) {
           </div>
         </div>
 
+        {/* 全班統計儀表板 */}
+        {view.classPaymentStats && (
+          <div style={styles.dashboardCard}>
+            <div style={styles.dashboardRow}>
+              <span>全班繳費率</span>
+              <strong style={{ color: 'var(--text)' }}>
+                {view.classPaymentStats.paid} / {view.classPaymentStats.total} 人 ({
+                  view.classPaymentStats.total > 0 
+                    ? Math.round((view.classPaymentStats.paid / view.classPaymentStats.total) * 100) 
+                    : 0
+                }%)
+              </strong>
+            </div>
+            {/* 進度條 */}
+            <div style={styles.progressBarBg}>
+              <div style={{
+                ...styles.progressBarFill,
+                width: `${view.classPaymentStats.total > 0 ? (view.classPaymentStats.paid / view.classPaymentStats.total) * 100 : 0}%`
+              }} />
+            </div>
+            
+            {/* 累計收支與餘額迷你字卡 */}
+            <div style={styles.miniStatsGrid}>
+              <div style={styles.miniStatBox}>
+                <span style={styles.miniStatLabel}>累計總收入</span>
+                <strong style={{ ...styles.miniStatVal, color: 'var(--green)' }}>
+                  NT$ {incomeTotal.toLocaleString()}
+                </strong>
+              </div>
+              <div style={styles.miniStatBox}>
+                <span style={styles.miniStatLabel}>累計總支出</span>
+                <strong style={{ ...styles.miniStatVal, color: 'var(--red)' }}>
+                  NT$ {expenseTotal.toLocaleString()}
+                </strong>
+              </div>
+            </div>
+          </div>
+        )}
+
         <h2 style={styles.sectionTitle}>班費收支明細</h2>
         <p style={styles.sectionHint}>僅顯示金額與項目，不顯示個人資訊</p>
 
@@ -395,5 +434,57 @@ const styles = {
     marginTop: 20, width: '100%', padding: '10px 16px',
     borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)',
     background: 'transparent', color: 'var(--text-soft)', fontSize: 13, cursor: 'pointer'
+  },
+  dashboardCard: {
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius)',
+    padding: 16,
+    marginBottom: 20,
+    background: 'var(--bg-card)'
+  },
+  dashboardRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-soft)',
+    marginBottom: 8
+  },
+  progressBarBg: {
+    width: '100%',
+    height: 8,
+    borderRadius: 999,
+    background: 'var(--border)',
+    overflow: 'hidden',
+    marginBottom: 16
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 999,
+    background: 'var(--green)',
+    transition: 'width 0.4s ease-out'
+  },
+  miniStatsGrid: {
+    display: 'flex',
+    gap: 10
+  },
+  miniStatBox: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    padding: '8px 10px',
+    borderRadius: 'var(--radius-sm)',
+    border: '1px solid var(--border)',
+    background: 'var(--bg)'
+  },
+  miniStatLabel: {
+    fontSize: 11,
+    color: 'var(--text-soft)'
+  },
+  miniStatVal: {
+    fontSize: 13,
+    fontWeight: 700,
+    fontFamily: 'var(--font-mono)'
   }
 };

@@ -1293,7 +1293,17 @@ export default function ClassFundLedger() {
                       {/* 智慧座號選擇器 */}
                       <div className="cfl-field">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label>學生座號（選填）</label>
+                          <label>
+                            學生座號（選填）
+                            {seatInputMode === 'manual' && incomeForm.seat && (
+                              (() => {
+                                const student = roster.find(s => String(s.seat) === String(incomeForm.seat));
+                                return student 
+                                  ? <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>({student.name})</span>
+                                  : <span style={{ color: 'var(--red)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>(查無此學生)</span>;
+                              })()
+                            )}
+                          </label>
                           {roster.length > 0 && (
                             <button 
                               type="button" 
@@ -1323,7 +1333,17 @@ export default function ClassFundLedger() {
                             min="1" 
                             placeholder="例：5" 
                             value={incomeForm.seat} 
-                            onChange={(e) => setIncomeForm({ ...incomeForm, seat: e.target.value })} 
+                            onChange={(e) => {
+                              const selectedSeat = e.target.value;
+                              const student = roster.find(s => String(s.seat) === String(selectedSeat));
+                              const termLabel = incomeForm.term || settings.currentTerm || '';
+                              const autoSource = student ? `${termLabel} 班費 - ${student.name}` : incomeForm.source;
+                              setIncomeForm({ 
+                                ...incomeForm, 
+                                seat: selectedSeat,
+                                source: (incomeForm.source && !incomeForm.source.includes('班費 - ')) ? incomeForm.source : autoSource
+                              });
+                            }} 
                           />
                         )}
                       </div>
@@ -1369,7 +1389,17 @@ export default function ClassFundLedger() {
                       {/* 支出座號選擇器 */}
                       <div className="cfl-field">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label>學生座號（選填）</label>
+                          <label>
+                            學生座號（選填）
+                            {seatInputMode === 'manual' && expenseForm.seat && (
+                              (() => {
+                                const student = roster.find(s => String(s.seat) === String(expenseForm.seat));
+                                return student 
+                                  ? <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>({student.name})</span>
+                                  : <span style={{ color: 'var(--red)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>(查無此學生)</span>;
+                              })()
+                            )}
+                          </label>
                           {roster.length > 0 && (
                             <button 
                               type="button" 
@@ -1585,52 +1615,125 @@ export default function ClassFundLedger() {
       {/* 雲端與本地衝突處理解決 Modal */}
       {syncConflictModal === 'conflict' && cloudDataTemp && (
         <div className="cfl-overlay">
-          <div className="cfl-modal" style={{ maxWidth: '400px' }}>
-            <div className="cfl-modal-title" style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div className="cfl-modal" style={{ maxWidth: '640px', width: '95%' }}>
+            <div className="cfl-modal-title" style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
               <Database size={18} />
               <span>同步衝突提示</span>
             </div>
-            <div className="cfl-modal-sub">
-              偵測到雲端試算表與本地瀏覽器的資料不一致。<br />
-              請選擇您要採用的資料版本：
+            <div className="cfl-modal-sub" style={{ marginBottom: 20 }}>
+              偵測到雲端試算表與本地瀏覽器的資料不一致。請對照下方兩側的版本數據，並選擇您要採用的版本：
             </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: '16px 0' }}>
-              <button 
-                className="cfl-btn-ghost" 
-                style={{ textAlign: 'left', padding: '12px', border: '1px solid var(--primary)', borderRadius: 'var(--radius)', background: 'var(--primary-light)' }}
-                onClick={async () => {
-                  const merged = { ...settings, ...cloudDataTemp.settings };
-                  await applyCloudData(cloudDataTemp.transactions, cloudDataTemp.roster, merged);
-                  setSyncConflictModal(null);
-                  setCloudDataTemp(null);
-                  setSyncStatus('synced');
-                }}
-              >
-                <div style={{ fontWeight: 700, color: 'var(--primary-dark)' }}>▼ 下載雲端覆蓋本地（以雲端為準）</div>
-                <div style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: 4 }}>
-                  雲端帳目筆數：{cloudDataTemp.transactions.length} 筆<br />
-                  雲端學生名冊：{cloudDataTemp.roster.length} 人
+            {/* 左右對比面板 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, margin: '16px 0' }}>
+              
+              {/* 左側：本地端變更 */}
+              <div style={{ 
+                border: '1.5px solid var(--border)', 
+                borderRadius: 'var(--radius)', 
+                padding: '16px', 
+                background: 'rgba(200, 134, 42, 0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>💻 本地本機版本</span>
+                  </div>
+                  <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8, color: 'var(--text-soft)', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>收支交易：</span>
+                      <strong style={{ color: 'var(--text)' }}>{transactions.length} 筆</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>名冊人數：</span>
+                      <strong style={{ color: 'var(--text)' }}>{roster.length} 人</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>班級名稱：</span>
+                      <strong style={{ color: 'var(--text)' }}>{settings.className || '未設定'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>目前學期：</span>
+                      <strong style={{ color: 'var(--text)' }}>{settings.currentTerm || '未設定'}</strong>
+                    </div>
+                  </div>
                 </div>
-              </button>
+                
+                <button 
+                  type="button"
+                  className="cfl-btn-primary" 
+                  style={{ width: '100%', padding: '10px', background: 'var(--accent)', borderColor: 'var(--accent)' }}
+                  onClick={() => {
+                    pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
+                  }}
+                >
+                  ▲ 用本地覆蓋雲端
+                </button>
+              </div>
 
-              <button 
-                className="cfl-btn-ghost" 
-                style={{ textAlign: 'left', padding: '12px', border: '1px solid var(--accent)', borderRadius: 'var(--radius)', background: 'rgba(200, 134, 42, 0.05)' }}
-                onClick={() => {
-                  pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
-                }}
-              >
-                <div style={{ fontWeight: 700, color: 'var(--accent)' }}>▲ 上傳本地覆蓋雲端（以本地為準）</div>
-                <div style={{ fontSize: 11, color: 'var(--text-soft)', marginTop: 4 }}>
-                  本地帳目筆數：{transactions.length} 筆<br />
-                  本地學生名冊：{roster.length} 人
+              {/* 右側：雲端備份 */}
+              <div style={{ 
+                border: '1.5px solid var(--primary-mid)', 
+                borderRadius: 'var(--radius)', 
+                padding: '16px', 
+                background: 'var(--primary-light)',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--primary-dark)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>☁️ 雲端備份版本</span>
+                  </div>
+                  <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8, color: 'var(--text-soft)', marginBottom: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>收支交易：</span>
+                      <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.transactions.length} 筆</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>名冊人數：</span>
+                      <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.roster.length} 人</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>班級名稱：</span>
+                      <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.settings.className || '未設定'}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>目前學期：</span>
+                      <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.settings.currentTerm || '未設定'}</strong>
+                    </div>
+                  </div>
                 </div>
-              </button>
+                
+                <button 
+                  type="button"
+                  className="cfl-btn-primary" 
+                  style={{ width: '100%', padding: '10px' }}
+                  onClick={async () => {
+                    const merged = { ...settings, ...cloudDataTemp.settings };
+                    await applyCloudData(cloudDataTemp.transactions, cloudDataTemp.roster, merged);
+                    setSyncConflictModal(null);
+                    setCloudDataTemp(null);
+                    setSyncStatus('synced');
+                  }}
+                >
+                  ▼ 下載雲端覆蓋本地
+                </button>
+              </div>
+
             </div>
 
-            <div className="cfl-modal-actions">
-              <button className="cfl-btn-ghost" style={{ flex: 1 }} onClick={() => { setSyncConflictModal(null); setCloudDataTemp(null); }}>暫不處理（保持現狀）</button>
+            <div className="cfl-modal-actions" style={{ marginTop: 12 }}>
+              <button 
+                type="button"
+                className="cfl-btn-ghost" 
+                style={{ flex: 1, padding: '10px' }} 
+                onClick={() => { setSyncConflictModal(null); setCloudDataTemp(null); }}
+              >
+                暫不處理（保持現狀）
+              </button>
             </div>
           </div>
         </div>
