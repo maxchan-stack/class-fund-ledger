@@ -105,6 +105,7 @@ export default function ParentPortal() {
       const res = await fetch(sheetUrl, {
         method: 'POST',
         mode: 'cors',
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ action: 'parentAuth', seat: seat.trim(), pin: pin.trim() })
       });
       const json = await res.json();
