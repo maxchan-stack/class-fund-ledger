@@ -20,8 +20,13 @@ function doGet(e) {
   try {
     var ss = getActiveSpreadsheetWithFallback(e);
     
-    // 解析參數，支援家長端 GET 請求驗證
+    // 解析參數，支援家長端 GET 請求驗證與導師驗證
     var action = e && e.parameter && e.parameter.action ? e.parameter.action : "";
+    var auth = e && e.parameter && e.parameter.auth ? String(e.parameter.auth) : "";
+    
+    // 取得名冊以利後續去識別化比對
+    var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
+    var rawRoster = readSheetData(rosterSheet);
     
     if (action === "parentAuth") {
       var seat = e && e.parameter && e.parameter.seat ? String(e.parameter.seat) : "";
@@ -34,9 +39,21 @@ function doGet(e) {
       }
       
       var authResult = parentAuth(ss, seat, pin, termParam);
+      // 對家長端的傳回內容中的備註與項目名稱進行去識別化過濾，確保不洩露其他同學姓名
+      if (authResult.success && authResult.data) {
+        if (authResult.data.classLedger) {
+          authResult.data.classLedger.forEach(function(t) {
+            if (t.note) t.note = maskNamesInText(t.note, rawRoster);
+            if (t.item) t.item = maskNamesInText(t.item, rawRoster);
+          });
+        }
+      }
       return ContentService.createTextOutput(JSON.stringify(authResult))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    
+    // 驗證是否為導師身分
+    var isTeacher = checkTeacherAuth(ss, auth);
     
     // 讀取第一個工作表作為主帳本
     var sheet = ss.getSheets()[0];
@@ -45,18 +62,53 @@ function doGet(e) {
     } catch(e) {
       Logger.log("doGet setup headers error: " + e.toString());
     }
-    var lastRow = sheet.getLastRow();
     
     var transactions = readAllTransactions(sheet);
-    
-    // 名冊與設定維持在額外的工作表背景讀寫
-    var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
     var settingsSheet = getOrCreateSheet(ss, "settings", ["key", "value"]);
+    var settings = readSettingsData(settingsSheet);
     
+    // 如果不是導師，則強制對名冊與交易明細進行去識別化，且隱藏密碼以維護個資安全
+    if (!isTeacher) {
+      var anonymizedRoster = rawRoster.map(function(r) {
+        return { seat: String(r.seat), name: maskName(r.name) };
+      });
+      
+      var anonymizedTransactions = transactions.map(function(t) {
+        return {
+          id: t.id,
+          type: t.type,
+          date: t.date,
+          source: t.type === "income" ? maskNamesInText(t.source, rawRoster) : "",
+          amount: t.amount,
+          seat: t.seat !== undefined && t.seat !== null ? String(t.seat) : "",
+          category: t.type === "expense" ? t.category : undefined,
+          item: t.type === "expense" ? maskNamesInText(t.item, rawRoster) : undefined,
+          payee: t.type === "expense" ? maskNamesInText(t.payee, rawRoster) : "",
+          term: t.term,
+          note: maskNamesInText(t.note, rawRoster)
+        };
+      });
+      
+      // 隱藏設定中的教師密碼
+      if (settings.pin) {
+        settings.pin = "HIDDEN";
+      }
+      
+      var data = {
+        transactions: anonymizedTransactions,
+        roster: anonymizedRoster,
+        settings: settings
+      };
+      
+      return ContentService.createTextOutput(JSON.stringify({ success: true, data: data, anonymized: true }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // 導師模式：返回完整包含姓名與細節的明細
     var data = {
       transactions: transactions,
-      roster: readSheetData(rosterSheet),
-      settings: readSettingsData(settingsSheet)
+      roster: rawRoster,
+      settings: settings
     };
     
     return ContentService.createTextOutput(JSON.stringify({ success: true, data: data }))
@@ -65,6 +117,47 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+// ── 去識別化中文姓名（例如：王小明 -> 王○明，李二 -> 李○） ──
+function maskName(name) {
+  if (!name) return "";
+  var len = name.length;
+  if (len <= 2) {
+    return name.charAt(0) + "○";
+  }
+  return name.charAt(0) + "○" + name.substring(2);
+}
+
+// ── 批次遮罩文字區塊中提及的所有學生姓名，維護個資安全 ──
+function maskNamesInText(text, roster) {
+  if (!text) return "";
+  var masked = text;
+  for (var i = 0; i < roster.length; i++) {
+    var name = roster[i].name;
+    if (name && name.length >= 2) {
+      // 避免匹配到單字或重疊
+      var re = new RegExp(name, "g");
+      masked = masked.replace(re, maskName(name));
+    }
+  }
+  return masked;
+}
+
+// ── 驗證導師讀取權限（比對 settings 中的 pin） ──
+function checkTeacherAuth(ss, auth) {
+  if (!auth) return false;
+  try {
+    var settingsSheet = ss.getSheetByName("settings");
+    if (!settingsSheet) return false;
+    var settings = readSettingsData(settingsSheet);
+    var correctPin = settings.pin;
+    if (!correctPin) return true; // 尚未設定教師密碼時，預設放行
+    return String(correctPin).trim() === String(auth).trim();
+  } catch (e) {
+    Logger.log("checkTeacherAuth error: " + e.toString());
+  }
+  return false;
 }
 
 function doPost(e) {
@@ -375,6 +468,25 @@ function parentAuth(ss, seat, pin, termParam) {
     classBalance += transactions[n].type === "income" ? (Number(transactions[n].amount) || 0) : -(Number(transactions[n].amount) || 0);
   }
 
+  // 統計全班繳費狀況 (去識別化統計)
+  var totalStudents = roster.length;
+  var paidCount = 0;
+  for (var x = 0; x < roster.length; x++) {
+    var rSeat = String(roster[x].seat);
+    var rPaid = 0;
+    for (var y = 0; y < transactions.length; y++) {
+      var t = transactions[y];
+      if (t.type === "income" && String(t.seat) === rSeat && t.term === term) {
+        rPaid += Number(t.amount) || 0;
+      }
+    }
+    if (amountDue > 0) {
+      if (rPaid >= amountDue) paidCount++;
+    } else {
+      if (rPaid > 0) paidCount++;
+    }
+  }
+
   return {
     success: true,
     isNewSetup: isNewSetup,
@@ -385,7 +497,8 @@ function parentAuth(ss, seat, pin, termParam) {
         payment: { seat: seat, term: term, amountDue: amountDue, amountPaid: amountPaid, status: status }
       },
       classLedger: classLedger,
-      classBalance: classBalance
+      classBalance: classBalance,
+      classPaymentStats: { total: totalStudents, paid: paidCount }
     }
   };
 }

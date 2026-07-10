@@ -365,8 +365,11 @@ export default function ClassFundLedger() {
   const autoPullData = async (url, localTrans, localRoster, localSettings) => {
     setSyncStatus('syncing');
     try {
-      const spreadsheetParam = localSettings.spreadsheetUrl ? `?url=${encodeURIComponent(localSettings.spreadsheetUrl)}` : '';
-      const res = await fetch(`${url}${spreadsheetParam}`, { method: 'GET', mode: 'cors' });
+      const queryParams = new URLSearchParams();
+      if (localSettings.spreadsheetUrl) queryParams.set('url', localSettings.spreadsheetUrl);
+      if (localSettings.pin) queryParams.set('auth', localSettings.pin);
+      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      const res = await fetch(`${url}${queryString}`, { method: 'GET', mode: 'cors' });
       if (!res.ok) throw new Error('Network response was not ok');
       const result = await res.json();
       
@@ -434,8 +437,11 @@ export default function ClassFundLedger() {
     
     try {
       // 1. 先嘗試拉取最新資料
-      const spreadsheetParam = settings.spreadsheetUrl ? `?url=${encodeURIComponent(settings.spreadsheetUrl)}` : '';
-      const res = await fetch(`${settings.sheetUrl}${spreadsheetParam}`, { method: 'GET', mode: 'cors' });
+      const queryParams = new URLSearchParams();
+      if (settings.spreadsheetUrl) queryParams.set('url', settings.spreadsheetUrl);
+      if (settings.pin) queryParams.set('auth', settings.pin);
+      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      const res = await fetch(`${settings.sheetUrl}${queryString}`, { method: 'GET', mode: 'cors' });
       if (!res.ok) throw new Error('Fetch failed');
       const result = await res.json();
       
