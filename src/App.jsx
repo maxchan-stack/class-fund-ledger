@@ -388,8 +388,21 @@ export default function ClassFundLedger() {
       if (localSettings.pin) queryParams.set('auth', localSettings.pin);
       const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
       const res = await fetch(`${url}${queryString}`, { method: 'GET', mode: 'cors' });
-      if (!res.ok) throw new Error('Network response was not ok');
-      const result = await res.json();
+      
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (jsonErr) {
+        console.error('雲端回應無法解析為 JSON (可能為權限重置頁面)：', text.substring(0, 200));
+        setSyncStatus('error');
+        if (text.includes('<!doctype') || text.includes('<html')) {
+          setError('雲端回應授權頁面：請確認 Apps Script 部署設定『誰有存取權』已設為『所有人』');
+        } else {
+          setError('雲端回應格式錯誤，無法完成同步');
+        }
+        return;
+      }
       
       if (result.success && result.data) {
         const cloudTrans = result.data.transactions || [];
@@ -419,10 +432,12 @@ export default function ClassFundLedger() {
         }
       } else {
         setSyncStatus('error');
+        setError('雲端拉取失敗：' + (result.error || '未知錯誤'));
       }
     } catch (err) {
       console.error('自動拉取雲端資料失敗：', err);
       setSyncStatus('error');
+      setError('連線至雲端時發生網路錯誤，請稍後重試');
     }
   };
 
@@ -465,8 +480,16 @@ export default function ClassFundLedger() {
       if (settings.pin) queryParams.set('auth', settings.pin);
       const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
       const res = await fetch(`${settings.sheetUrl}${queryString}`, { method: 'GET', mode: 'cors' });
-      if (!res.ok) throw new Error('Fetch failed');
-      const result = await res.json();
+      
+      const text = await res.text();
+      let result;
+      try {
+        result = JSON.parse(text);
+      } catch (e) {
+        console.warn('手動拉取回應非 JSON，轉由直接寫入試算表處理');
+        await pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
+        return;
+      }
       
       if (result.success && result.data) {
         const cloudTrans = result.data.transactions || [];
@@ -529,8 +552,18 @@ export default function ClassFundLedger() {
         })
       });
       
-      if (!response.ok) throw new Error('Post failed');
-      const resJson = await response.json();
+      if (!response.ok) throw new Error('Post failed with status ' + response.status);
+      
+      const text = await response.text();
+      let resJson;
+      try {
+        resJson = JSON.parse(text);
+      } catch (jErr) {
+        if (text.includes('<!doctype') || text.includes('<html')) {
+          throw new Error('雲端回應授權頁面，請確認 Apps Script 設定「誰有存取權：所有人」');
+        }
+        throw new Error('雲端回應無法解析');
+      }
       
       if (resJson.success) {
         setSyncStatus('synced');
@@ -557,11 +590,13 @@ export default function ClassFundLedger() {
             settings: settingsToPush
           })
         });
-        setSyncStatus('synced'); // 視作成功但無法驗證
+        // 不偽裝成完全 synced 驗證成功，而是標記 pending_push 並提醒使用者
+        setSyncStatus('pending_push');
         setSyncConflictModal(null);
+        setError('已發送雲端寫入請求（no-cors 模式）。跨網域限制下無法立即驗證結果，建議重載網頁確認。');
       } catch (e) {
         setSyncStatus('error');
-        setError('同步連線失敗，請檢查網路狀態');
+        setError('同步連線失敗，請檢查網路狀態或 GAS 部署狀態');
       }
     }
   }
