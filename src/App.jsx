@@ -285,7 +285,17 @@ export default function ClassFundLedger() {
 
   async function loadAll() {
     setLoading(true);
-    let loadedSettings = { className: '', pin: '', sheetUrl: '', spreadsheetUrl: '', terms: [], currentTerm: '' };
+    const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwBoo653bMsvkZceaXks8x2Ul2GuFJWI5ctXQMkh3vq_YLolAerNJWIv9gRyEnOmvN_Bw/exec';
+    const DEFAULT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/18CZv9TNJHrUBiAGPUTti2pNuDEMMXwniXU9aBs_lsyQ/edit';
+
+    let loadedSettings = { 
+      className: '214 班', 
+      pin: '', 
+      sheetUrl: DEFAULT_SHEET_URL, 
+      spreadsheetUrl: DEFAULT_SPREADSHEET_URL, 
+      terms: ['114-1'], 
+      currentTerm: '114-1' 
+    };
     let loadedTransactions = [];
     let loadedRoster = [];
 
@@ -302,7 +312,14 @@ export default function ClassFundLedger() {
     try {
       const s = await StorageService.get('settings', true);
       if (s) {
-        loadedSettings = JSON.parse(s.value);
+        const parsed = JSON.parse(s.value);
+        loadedSettings = {
+          ...loadedSettings,
+          ...parsed,
+          sheetUrl: parsed.sheetUrl || DEFAULT_SHEET_URL,
+          spreadsheetUrl: parsed.spreadsheetUrl || DEFAULT_SPREADSHEET_URL,
+          className: parsed.className || '214 班'
+        };
       }
     } catch (e) {
       console.error('載入 settings 失敗', e);
@@ -318,9 +335,9 @@ export default function ClassFundLedger() {
     }
 
     setSettings(loadedSettings);
-    setClassNameInput(loadedSettings.className || '');
-    setSheetUrlInput(loadedSettings.sheetUrl || '');
-    setSpreadsheetUrlInput(loadedSettings.spreadsheetUrl || '');
+    setClassNameInput(loadedSettings.className || '214 班');
+    setSheetUrlInput(loadedSettings.sheetUrl || DEFAULT_SHEET_URL);
+    setSpreadsheetUrlInput(loadedSettings.spreadsheetUrl || DEFAULT_SPREADSHEET_URL);
 
     try {
       const t = await StorageService.get('ledger', true);

@@ -70,6 +70,7 @@ export default function ParentPortal() {
 
   useEffect(() => {
     (async () => {
+      const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwBoo653bMsvkZceaXks8x2Ul2GuFJWI5ctXQMkh3vq_YLolAerNJWIv9gRyEnOmvN_Bw/exec';
       const fromUrl = resolveSheetUrlFromLocation();
       if (fromUrl) {
         setSheetUrl(fromUrl);
@@ -79,11 +80,13 @@ export default function ParentPortal() {
       if (s) {
         try {
           const parsed = JSON.parse(s.value);
-          if (parsed.sheetUrl) setSheetUrl(parsed.sheetUrl);
+          setSheetUrl(parsed.sheetUrl || DEFAULT_SHEET_URL);
+          return;
         } catch (e) {
           console.error('讀取現有設定失敗', e);
         }
       }
+      setSheetUrl(DEFAULT_SHEET_URL);
     })();
   }, []);
 
