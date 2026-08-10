@@ -146,14 +146,40 @@ function maskNamesInText(text, roster) {
 
 // ── 驗證導師讀取權限（比對 settings 中的 pin） ──
 function checkTeacherAuth(ss, auth) {
-  if (!auth) return false;
   try {
     var settingsSheet = ss.getSheetByName("settings");
-    if (!settingsSheet) return false;
+    if (!settingsSheet) return true; // 尚未建立 settings 工作表，預設放行
+
     var settings = readSettingsData(settingsSheet);
-    var correctPin = settings.pin;
-    if (!correctPin) return true; // 尚未設定教師密碼時，預設放行
-    return String(correctPin).trim() === String(auth).trim();
+    var storedPin = settings.pin;
+
+    if (!storedPin || String(storedPin).trim() === "HIDDEN") return true; // 尚未設定或密碼損毀，預設放行
+    if (!auth) return false;
+
+    var storedPinStr = String(storedPin).trim();
+    var authStr = String(auth).trim();
+
+    // 判斷試算表中的 PIN 是否已雜湊（SHA-256 hex 為 64 字元）
+    var isHashed = (storedPinStr.length === 64 && /^[0-9a-f]+$/.test(storedPinStr));
+
+    if (isHashed) {
+      // 已雜湊：將傳入的明碼 auth 雜湊後再比對
+      return hashTeacherPin(authStr) === storedPinStr;
+    } else {
+      // 向下相容：試算表仍為舊版明碼格式
+      var plainMatch = (storedPinStr === authStr);
+      if (plainMatch) {
+        // 自動升級：將明碼 PIN 雜湊後寫回試算表
+        try {
+          settings.pin = hashTeacherPin(authStr);
+          writeSettingsData(settingsSheet, settings);
+          Logger.log("[checkTeacherAuth] PIN 已自動升級為雜湊儲存格式");
+        } catch (upgradeErr) {
+          Logger.log("[checkTeacherAuth] PIN 升級失敗（不影響本次驗證）：" + upgradeErr.toString());
+        }
+      }
+      return plainMatch;
+    }
   } catch (e) {
     Logger.log("checkTeacherAuth error: " + e.toString());
   }
@@ -167,6 +193,12 @@ function doPost(e) {
     var action = postData.action;
     
     if (action === "sync" || action === "push") {
+      var auth = (postData.auth !== undefined && postData.auth !== null) ? String(postData.auth) : "";
+      if (!checkTeacherAuth(ss, auth)) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "驗證失敗，無權限寫入試算表" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+
       var sheet = ss.getSheets()[0];
       try {
         setupSheetHeadersAndFormulas(sheet);
@@ -178,8 +210,8 @@ function doPost(e) {
       if (postData.transactions) {
         var lastRow = sheet.getLastRow();
         if (lastRow >= 5) {
-          // 清空第 5 列以下的所有資料（包含 M、N、P、Q 等隱藏學期備註欄）
-          sheet.getRange(5, 1, lastRow - 4, 18).clearContent();
+          // 清空第 5 列以下的所有資料（涵蓋至 S 欄 UUID 欄）
+          sheet.getRange(5, 1, lastRow - 4, 19).clearContent();
         }
         
         var transList = postData.transactions;
@@ -206,6 +238,10 @@ function doPost(e) {
           }
           sheet.getRange(5, 1, incomeRowsMain.length, 4).setValues(incomeRowsMain);
           sheet.getRange(5, 14, incomeRowsMeta.length, 2).setValues(incomeRowsMeta);
+          
+          // 同時寫入收入交易的 UUID 至 R 欄（第 18 欄）
+          var incomeUUIDs = incomes.map(function(t) { return [t.id || '']; });
+          sheet.getRange(5, 18, incomeUUIDs.length, 1).setValues(incomeUUIDs);
         }
         
         // 分流：處理支出
@@ -234,6 +270,10 @@ function doPost(e) {
           }
           sheet.getRange(5, 6, expenseRowsMain.length, 8).setValues(expenseRowsMain);
           sheet.getRange(5, 16, expenseRowsMeta.length, 2).setValues(expenseRowsMeta);
+          
+          // 同時寫入支出交易的 UUID 至 S 欄（第 19 欄）
+          var expenseUUIDs = expenses.map(function(t) { return [t.id || '']; });
+          sheet.getRange(5, 19, expenseUUIDs.length, 1).setValues(expenseUUIDs);
         }
       }
       
@@ -246,6 +286,23 @@ function doPost(e) {
       // 3. 寫入設定（背景額外工作表）
       if (postData.settings) {
         var settingsSheet = getOrCreateSheet(ss, "settings", ["key", "value"]);
+        var existingSettings = readSettingsData(settingsSheet);
+        
+        // 若前端傳來 HIDDEN，保留試算表中現有的 PIN，不覆寫
+        if (postData.settings.pin === "HIDDEN" && existingSettings.pin) {
+          postData.settings.pin = existingSettings.pin;
+        }
+
+        // 若前端傳來明碼 PIN（非 HIDDEN、非空、非已雜湊的 64 字元 hex），將其雜湊後再寫入
+        var incomingPin = postData.settings.pin;
+        if (incomingPin && incomingPin !== "HIDDEN") {
+          var incomingPinStr = String(incomingPin).trim();
+          var alreadyHashed = (incomingPinStr.length === 64 && /^[0-9a-f]+$/.test(incomingPinStr));
+          if (!alreadyHashed) {
+            postData.settings.pin = hashTeacherPin(incomingPinStr);
+          }
+        }
+
         writeSettingsData(settingsSheet, postData.settings);
       }
       
@@ -253,6 +310,24 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
     
+    if (action === "resetParentPin") {
+      var auth = (postData.auth !== undefined && postData.auth !== null) ? String(postData.auth) : "";
+      if (!checkTeacherAuth(ss, auth)) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "驗證失敗，無權限重設密碼" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      var seat = postData.seat !== undefined && postData.seat !== null ? String(postData.seat) : "";
+      if (!seat) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: "請提供欲重設之座號" }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+      
+      var resetSuccess = deleteCredentialBySeat(ss, seat);
+      return ContentService.createTextOutput(JSON.stringify({ success: true, reset: resetSuccess }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === "parentAuth") {
       var seat = postData.seat !== undefined && postData.seat !== null ? String(postData.seat) : "";
       var pin = postData.pin !== undefined && postData.pin !== null ? String(postData.pin) : "";
@@ -366,6 +441,25 @@ function writeSettingsData(sheet, settingsObj) {
     rows.push([key, val]);
   }
   sheet.getRange(2, 1, rows.length, 2).setValues(rows);
+}
+
+// 輔助函式：刪除特定座號的家長 credentials 紀錄進行密碼重設
+function deleteCredentialBySeat(ss, seat) {
+  var credSheet = getOrCreateSheet(ss, "credentials", ["seat", "pinHash", "updatedAt"]);
+  var credentials = readSheetData(credSheet);
+  var nextCreds = [];
+  var found = false;
+  for (var i = 0; i < credentials.length; i++) {
+    if (String(credentials[i].seat) !== String(seat)) {
+      nextCreds.push(credentials[i]);
+    } else {
+      found = true;
+    }
+  }
+  if (found) {
+    writeSheetData(credSheet, nextCreds, ["seat", "pinHash", "updatedAt"]);
+  }
+  return found;
 }
 
 // ===================================================================
@@ -509,14 +603,16 @@ function readAllTransactions(sheet) {
   var lastRow = sheet.getLastRow();
   if (lastRow < 5) return transactions;
 
-  var incomeData = sheet.getRange(5, 1, lastRow - 4, 15).getValues();
+  var incomeData = sheet.getRange(5, 1, lastRow - 4, 18).getValues();
   var incomeDisplay = sheet.getRange(5, 1, lastRow - 4, 1).getDisplayValues();
   for (var i = 0; i < incomeData.length; i++) {
     var row = incomeData[i];
     var dateVal = formatJSDate(incomeDisplay[i][0]);
     if (dateVal) {
+      // row[17] 對應第 18 欄（R 欄），優先使用已持久化的 UUID
+      var incomeUUID = (row[17] && String(row[17]).trim()) ? String(row[17]).trim() : ("income_" + i);
       transactions.push({
-        id: "income_" + i,
+        id: incomeUUID,
         type: "income",
         date: dateVal,
         source: row[1] || "",
@@ -528,14 +624,17 @@ function readAllTransactions(sheet) {
     }
   }
 
-  var expenseData = sheet.getRange(5, 6, lastRow - 4, 12).getValues();
+  // 從 F 欄（第 6 欄）延伸讀取至 S 欄（第 19 欄），共 14 欄
+  var expenseData = sheet.getRange(5, 6, lastRow - 4, 14).getValues();
   var expenseDisplay = sheet.getRange(5, 6, lastRow - 4, 1).getDisplayValues();
   for (var i = 0; i < expenseData.length; i++) {
     var row = expenseData[i];
     var dateVal = formatJSDate(expenseDisplay[i][0]);
     if (dateVal) {
+      // row[13] 對應第 19 欄（S 欄，支出 UUID）
+      var expenseUUID = (row[13] && String(row[13]).trim()) ? String(row[13]).trim() : ("expense_" + i);
       transactions.push({
-        id: "expense_" + i,
+        id: expenseUUID,
         type: "expense",
         date: dateVal,
         category: row[1] || "",
@@ -562,6 +661,18 @@ function hashPin(seat, pin) {
   for (var i = 0; i < digest.length; i++) {
     var byte = (digest[i] + 256) % 256;
     hex += ("0" + byte.toString(16)).slice(-2);
+  }
+  return hex;
+}
+
+// 將導師 PIN 碼以 SHA-256 雜湊儲存，避免明碼存於試算表
+function hashTeacherPin(pin) {
+  var raw = 'cls-fund-teacher-salt:' + pin;
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw, Utilities.Charset.UTF_8);
+  var hex = '';
+  for (var i = 0; i < digest.length; i++) {
+    var b = (digest[i] + 256) % 256;
+    hex += ('0' + b.toString(16)).slice(-2);
   }
   return hex;
 }
@@ -630,7 +741,7 @@ function setupSheetHeadersAndFormulas(sheet) {
     rA2.setFontWeight("bold");
 
     var rB2 = sheet.getRange("B2");
-    rB2.setFormula("=SUM(C5:C1000)");
+    rB2.setFormula("=SUM(C5:C)");
     rB2.setFontWeight("bold");
 
     var rC2 = sheet.getRange("C2");
@@ -638,7 +749,7 @@ function setupSheetHeadersAndFormulas(sheet) {
     rC2.setFontWeight("bold");
 
     var rD2 = sheet.getRange("D2");
-    rD2.setFormula("=SUM(K5:K1000)");
+    rD2.setFormula("=SUM(K5:K)");
     rD2.setFontWeight("bold");
 
     var rF2 = sheet.getRange("F2");
@@ -669,6 +780,8 @@ function setupSheetHeadersAndFormulas(sheet) {
     sheet.getRange(4, 15).setValue("備註 (收)").setFontWeight("bold").setBackground("#e8f5e9");
     sheet.getRange(4, 16).setValue("學期 (支)").setFontWeight("bold").setBackground("#ffebee");
     sheet.getRange(4, 17).setValue("備註 (支)").setFontWeight("bold").setBackground("#ffebee");
+    sheet.getRange(4, 18).setValue("UUID (收)").setFontWeight("bold").setBackground("#e3f2fd");
+    sheet.getRange(4, 19).setValue("UUID (支)").setFontWeight("bold").setBackground("#fce4ec");
 
   } catch (err) {
     Logger.log("setupSheetHeadersAndFormulas error: " + err.toString());

@@ -847,6 +847,11 @@ nav button.active {
   color: var(--red);
 }
 
+.cfl-roster-chip svg.cfl-reset-key-btn:hover {
+  background-color: rgba(200, 134, 14, 0.08);
+  color: var(--accent);
+}
+
 /* 長條圖分布 (琥珀金漸層) */
 .cfl-breakdown {
   margin-top: 28px;

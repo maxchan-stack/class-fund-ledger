@@ -8,7 +8,8 @@ import {
   TrendingDown, 
   AlertCircle, 
   RefreshCw, 
-  Database 
+  Database,
+  Key
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -410,6 +411,11 @@ export default function ClassFundLedger() {
 
   // 套用雲端資料到本地
   async function applyCloudData(cloudTrans, cloudRoster, mergedSettings) {
+    const finalSettings = { ...mergedSettings };
+    if (finalSettings.pin === 'HIDDEN') {
+      finalSettings.pin = settings.pin || ''; // 保留本機原有的 pin 避免被隱藏字串覆蓋
+    }
+
     const sanitizedTrans = cloudTrans.map(tx => ({
       ...tx,
       date: formatBrowserDate(tx.date),
@@ -418,12 +424,12 @@ export default function ClassFundLedger() {
     }));
     setTransactions(sanitizedTrans);
     setRoster(cloudRoster);
-    setSettings(mergedSettings);
-    setClassNameInput(mergedSettings.className || '');
+    setSettings(finalSettings);
+    setClassNameInput(finalSettings.className || '');
     
     await StorageService.set('ledger', JSON.stringify(sanitizedTrans), true);
     await StorageService.set('roster', JSON.stringify(cloudRoster), true);
-    await StorageService.set('settings', JSON.stringify(mergedSettings), true);
+    await StorageService.set('settings', JSON.stringify(finalSettings), true);
   }
 
   // 手動觸發雲端同步（合併與推送）
@@ -498,6 +504,7 @@ export default function ClassFundLedger() {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'sync',
+          auth: sett.pin || '',
           sheetUrl: sett.spreadsheetUrl || '',
           transactions: sanitizedTrans,
           roster: rost,
@@ -526,6 +533,7 @@ export default function ClassFundLedger() {
           headers: { 'Content-Type': 'text/plain' },
           body: JSON.stringify({
             action: 'sync',
+            auth: sett.pin || '',
             sheetUrl: sett.spreadsheetUrl || '',
             transactions: trans,
             roster: rost,
@@ -864,6 +872,62 @@ export default function ClassFundLedger() {
     await saveRoster(roster.filter((s) => String(s.seat).trim() !== String(seat).trim()));
   }
 
+  async function handleResetParentPin(seat, name) {
+    if (!settings.sheetUrl) {
+      setError('請先在設定中填寫試算表網址');
+      return;
+    }
+    if (!window.confirm(`確定要重設座號 ${seat}（${name}）的家長密碼 (PIN 碼) 嗎？\n這將刪除該座號在雲端試算表的註冊紀錄，允許家長重新設定。`)) return;
+
+    setSyncStatus('syncing');
+    setError('');
+    try {
+      const response = await fetch(settings.sheetUrl, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'resetParentPin',
+          auth: settings.pin || '',
+          sheetUrl: settings.spreadsheetUrl || '',
+          seat: String(seat)
+        })
+      });
+      
+      if (!response.ok) throw new Error('Network response was not ok');
+      const resJson = await response.json();
+      
+      if (resJson.success) {
+        setSyncStatus('synced');
+        alert(`座號 ${seat}（${name}）的家長密碼已重設成功！`);
+      } else {
+        console.error('重設密碼失敗：', resJson);
+        setSyncStatus('error');
+        setError('重設密碼失敗：' + (resJson.error || '未知錯誤'));
+      }
+    } catch (err) {
+      console.error('重設密碼失敗：', err);
+      try {
+        await fetch(settings.sheetUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify({
+            action: 'resetParentPin',
+            auth: settings.pin || '',
+            sheetUrl: settings.spreadsheetUrl || '',
+            seat: String(seat)
+          })
+        });
+        setSyncStatus('synced');
+        alert(`已發送重設密碼請求（無法驗證結果，請稍後確認試算表）`);
+      } catch (e) {
+        setSyncStatus('error');
+        setError('同步連線失敗，請檢查網路狀態');
+      }
+    }
+  }
+
   const handleRosterImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -983,7 +1047,7 @@ export default function ClassFundLedger() {
                     className="cfl-classname-input"
                     value={classNameInput}
                     onChange={(e) => setClassNameInput(e.target.value)}
-                    placeholder="例：209 班"
+                    placeholder="例：214 班"
                     autoFocus
                   />
                   <button className="cfl-classname-edit-btn" onClick={saveClassName}>儲存</button>
@@ -1055,9 +1119,10 @@ export default function ClassFundLedger() {
                       <strong>【推薦方式】繫結型試算表 Apps Script（免設定試算表網址）：</strong><br />
                       1. 在您的 Google 試算表中，點選「擴充功能」→「Apps Script」。<br />
                       2. 將本專案根目錄的 <code>google-apps-script.js</code> 內容複製貼入並儲存。<br />
-                      3. 點選右上角「部署」→「新增部署」，類型選擇「網頁應用程式」。<br />
+                      3. 點選右上角「部署」→「新增部署」，類型選擇「網頁應用程式」（<strong>僅第一次設定時使用「新增部署」</strong>）。<br />
                       4. 設定「執行身分」為「我」，「誰有存取權」為「所有人」，點選「部署」並授權。<br />
-                      5. 複製產生的「網頁應用程式 URL」並貼在上方的「網頁應用程式網址」即可。<br /><br />
+                      5. 複製產生的「網頁應用程式 URL」並貼在上方的「網頁應用程式網址」即可。<br />
+                      <strong style={{ color: '#b34000' }}>⚠️ 往後更新 GAS 程式碼時，請選「管理部署」→ 編輯現有部署 → 新版本 → 部署，切勿點「新增部署」，否則已分享給家長的查詢連結將全部失效。</strong><br /><br />
                       <strong>【獨立版 Apps Script 方式】：</strong><br />
                       若您的 Apps Script 是在 Google 雲端硬碟中單獨建立（而非自試算表中點選開啟），則必須在上方第二欄填入該 Google 試算表的網址，以便 Apps Script 辨識要存取哪一個檔案。
                     </div>
@@ -1227,7 +1292,8 @@ export default function ClassFundLedger() {
                     {activeRosterSorted.map((s) => (
                       <span key={s.seat} className="cfl-roster-chip">
                         {s.seat}．{s.name}
-                        <X size={11} onClick={() => deleteStudent(s.seat)} />
+                        <Key size={11} className="cfl-reset-key-btn" title="重設家長密碼" onClick={() => handleResetParentPin(s.seat, s.name)} style={{ marginLeft: 4 }} />
+                        <X size={11} title="刪除學生" onClick={() => deleteStudent(s.seat)} />
                       </span>
                     ))}
                   </div>
