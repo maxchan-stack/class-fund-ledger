@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-const EXPENSE_CATEGORIES = ['簿本費', '隨堂測驗卷', '學科學資', '美勞／專案材料', '戶外教學／活動', '設備與耗材', '其他'];
+const EXPENSE_CATEGORIES = ['學科學資', '練習卷', '刊物'];
 
 // 安全相容的儲存服務：相容原 window.storage 與標準 localStorage
 const StorageService = {

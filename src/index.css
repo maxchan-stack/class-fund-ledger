@@ -1,4 +1,4 @@
-/* 班費紀錄系統 — 森林綠與琥珀金風格 CSS 設計系統 */
+/* 教材費紀錄系統 — 森林綠與琥珀金風格 CSS 設計系統 */
 
 :root {
   /* 主色系：深墨森林綠 (對標 #1a3326) */
@@ -1195,7 +1195,7 @@ nav button.active {
   }
 }
 
-/* 班費分析總覽（合併圈餅圖 + 趨勢圖） */
+/* 教材費分析總覽（合併圈餅圖 + 趨勢圖） */
 .cfl-analysis-card {
   background: var(--card);
   border: 1.5px solid var(--border-gold);

@@ -1,5 +1,5 @@
 /**
- * 班費紀錄系統 — Google Apps Script 雙向同步服務程式碼
+ * 教材費紀錄系統 — Google Apps Script 雙向同步服務程式碼
  * 
  * 部署教學：
  * 1. 在您的 Google 試算表選單中點選「擴充功能」 -> 「Apps Script」。
@@ -8,12 +8,12 @@
  * 4. 點選右上角「部署」 -> 「新增部署」。
  * 5. 類型選擇「網頁應用程式」（Web App）。
  * 6. 設定：
- *    - 說明：班費系統同步 API
+ *    - 說明：教材費系統同步 API
  *    - 執行身分：我（您的 Google 帳號）
  *    - 誰有存取權：所有人（Anyone）— **必須設定為所有人，前端瀏覽器才能呼叫**
  * 7. 點選「部署」，並授予權限。
  * 8. 複製產生的「網頁應用程式 URL」（格式通常為 https://script.google.com/macros/s/.../exec）。
- * 9. 將此網址貼入班費系統的「試算表備份」設定欄位中。
+ * 9. 將此網址貼入教材費系統的「試算表備份」設定欄位中。
  */
 
 function doGet(e) {
@@ -741,7 +741,7 @@ function setupSheetHeadersAndFormulas(sheet) {
 
     // 1. 大標題
     var rA1 = sheet.getRange("A1");
-    rA1.setValue("導師班級班費紀錄表");
+    rA1.setValue("導師班級教材費專戶紀錄表");
     rA1.setFontWeight("bold");
     rA1.setFontSize(13);
 
@@ -763,7 +763,7 @@ function setupSheetHeadersAndFormulas(sheet) {
     rD2.setFontWeight("bold");
 
     var rF2 = sheet.getRange("F2");
-    rF2.setValue("班費結餘：");
+    rF2.setValue("教材費結餘：");
     rF2.setFontWeight("bold");
 
     var rG2 = sheet.getRange("G2");
