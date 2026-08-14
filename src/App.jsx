@@ -9,11 +9,19 @@ import {
   AlertCircle, 
   RefreshCw, 
   Database,
-  Key
+  Key,
+  Users,
+  CreditCard,
+  Receipt,
+  FileSpreadsheet,
+  Printer,
+  ChevronRight,
+  ShieldCheck,
+  Wallet
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-const EXPENSE_CATEGORIES = ['冷氣費', '簿本費', '學科學資', '練習卷／單冊', '班級活動', '清潔費', '其他'];
+const EXPENSE_CATEGORIES = ['簿本費', '隨堂測驗卷', '學科學資', '美勞／專案材料', '戶外教學／活動', '設備與耗材', '其他'];
 
 // 安全相容的儲存服務：相容原 window.storage 與標準 localStorage
 const StorageService = {
@@ -67,6 +75,7 @@ function money(n) {
   const v = Number(n) || 0;
   return v.toLocaleString('zh-TW');
 }
+
 function formatBrowserDate(val) {
   if (!val) return '';
   const str = String(val).trim();
@@ -143,16 +152,24 @@ function parseRosterFromRows(rows) {
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
-}function areRostersEqual(local, cloud) {
+}
+
+function areRostersEqual(local, cloud) {
   const localList = (local || []).map(r => ({ seat: String(r.seat || '').trim(), name: r.name || '' }));
   const cloudList = (cloud || []).map(r => ({ seat: String(r.seat || '').trim(), name: r.name || '' }));
   if (localList.length !== cloudList.length) return false;
   const localMap = {};
   localList.forEach(r => { localMap[r.seat] = r.name; });
-  for (let i = 0; i < cloudList.length; i++) {
-    const c = cloudList[i];
-    if (localMap[c.seat] !== c.name) return false;
-  }
+  return cloudList.every(r => localMap[r.seat] === r.name);
+}
+
+function areSettingsEqual(local, cloud) {
+  if (!local || !cloud) return false;
+  if ((local.className || '') !== (cloud.className || '')) return false;
+  if ((local.currentTerm || '') !== (cloud.currentTerm || '')) return false;
+  const localTerms = Array.from(new Set(local.terms || [])).sort().join(',');
+  const cloudTerms = Array.from(new Set(cloud.terms || [])).sort().join(',');
+  if (localTerms !== cloudTerms) return false;
   return true;
 }
 
@@ -161,19 +178,43 @@ function areTransactionsEqual(local, cloud) {
     date: formatBrowserDate(t.date),
     source: t.source || t.item || '',
     amount: Number(t.amount) || 0,
-    seat: String(t.seat || '').trim(),
+    seat: String(t.seat || ''),
     term: t.term || '',
     note: t.note || ''
-  })).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source) || a.amount - b.amount || a.seat.localeCompare(b.seat));
-
+  }));
   const cloudIncomes = (cloud || []).filter(t => t.type === 'income').map(t => ({
     date: formatBrowserDate(t.date),
     source: t.source || t.item || '',
     amount: Number(t.amount) || 0,
-    seat: String(t.seat || '').trim(),
+    seat: String(t.seat || ''),
     term: t.term || '',
     note: t.note || ''
-  })).sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source) || a.amount - b.amount || a.seat.localeCompare(b.seat));
+  }));
+
+  const localExpenses = (local || []).filter(t => t.type === 'expense').map(t => ({
+    date: formatBrowserDate(t.date),
+    category: t.category || '',
+    item: t.item || t.source || '',
+    unitPrice: Number(t.unitPrice) || 0,
+    qty: Number(t.qty) || 1,
+    amount: Number(t.amount) || 0,
+    payee: String(t.payee || ''),
+    seat: String(t.seat || ''),
+    term: t.term || '',
+    note: t.note || ''
+  }));
+  const cloudExpenses = (cloud || []).filter(t => t.type === 'expense').map(t => ({
+    date: formatBrowserDate(t.date),
+    category: t.category || '',
+    item: t.item || t.source || '',
+    unitPrice: Number(t.unitPrice) || 0,
+    qty: Number(t.qty) || 1,
+    amount: Number(t.amount) || 0,
+    payee: String(t.payee || ''),
+    seat: String(t.seat || ''),
+    term: t.term || '',
+    note: t.note || ''
+  }));
 
   if (localIncomes.length !== cloudIncomes.length) return false;
   for (let i = 0; i < localIncomes.length; i++) {
@@ -184,65 +225,40 @@ function areTransactionsEqual(local, cloud) {
     }
   }
 
-  const localExpenses = (local || []).filter(t => t.type === 'expense').map(t => ({
-    date: formatBrowserDate(t.date),
-    category: t.category || '',
-    item: t.item || t.source || '',
-    unitPrice: Number(t.unitPrice) || 0,
-    qty: Number(t.qty) || 0,
-    amount: Number(t.amount) || 0,
-    payee: String(t.payee || '').trim(),
-    term: t.term || '',
-    note: t.note || ''
-  })).sort((a, b) => a.date.localeCompare(b.date) || a.item.localeCompare(b.item) || a.amount - b.amount || a.payee.localeCompare(b.payee));
-
-  const cloudExpenses = (cloud || []).filter(t => t.type === 'expense').map(t => ({
-    date: formatBrowserDate(t.date),
-    category: t.category || '',
-    item: t.item || t.source || '',
-    unitPrice: Number(t.unitPrice) || 0,
-    qty: Number(t.qty) || 0,
-    amount: Number(t.amount) || 0,
-    payee: String(t.payee || '').trim(),
-    term: t.term || '',
-    note: t.note || ''
-  })).sort((a, b) => a.date.localeCompare(b.date) || a.item.localeCompare(b.item) || a.amount - b.amount || a.payee.localeCompare(b.payee));
-
   if (localExpenses.length !== cloudExpenses.length) return false;
   for (let i = 0; i < localExpenses.length; i++) {
     const l = localExpenses[i];
     const c = cloudExpenses[i];
-    if (
-      l.date !== c.date || 
-      l.category !== c.category || 
-      l.item !== c.item || 
-      l.unitPrice !== c.unitPrice || 
-      l.qty !== c.qty || 
-      l.amount !== c.amount || 
-      l.payee !== c.payee || 
-      l.term !== c.term || 
-      l.note !== c.note
-    ) {
+    if (l.date !== c.date || l.category !== c.category || l.item !== c.item || l.unitPrice !== c.unitPrice || l.qty !== c.qty || l.amount !== c.amount || l.payee !== c.payee || l.seat !== c.seat || l.term !== c.term || l.note !== c.note) {
       return false;
     }
   }
+
   return true;
 }
 
-export default function ClassFundLedger() {
-  const [loading, setLoading] = useState(true);
-  const [transactions, setTransactions] = useState([]);
-  const [roster, setRoster] = useState([]); // 學生名冊：{ seat, name }
-  const [settings, setSettings] = useState({ className: '', pin: '', sheetUrl: '', spreadsheetUrl: '', terms: [], currentTerm: '' });
+export default function App() {
+  const [deviceRole, setDeviceRole] = useState('viewer'); // 'teacher' | 'viewer'
   const [teacherMode, setTeacherMode] = useState(false);
-  const [deviceRole, setDeviceRole] = useState('loading');
-  const [tab, setTab] = useState('income'); // 'income' | 'expense' | 'unpaid'
+  const [transactions, setTransactions] = useState([]);
+  const [roster, setRoster] = useState([]);
+  const [settings, setSettings] = useState({
+    className: '214 班',
+    pin: '',
+    sheetUrl: '',
+    spreadsheetUrl: '',
+    terms: ['114-1'],
+    currentTerm: '114-1',
+    duesConfig: {}
+  });
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('students'); // 'students' | 'income' | 'expense'
   const [termFilter, setTermFilter] = useState('all');
   const [error, setError] = useState('');
 
   // 雲端同步狀態：'idle' | 'syncing' | 'synced' | 'pending_push' | 'error'
   const [syncStatus, setSyncStatus] = useState('idle');
-  const [syncConflictModal, setSyncConflictModal] = useState(null); // 'conflict' | null
+  const [syncConflictModal, setSyncConflictModal] = useState(null);
   const [cloudDataTemp, setCloudDataTemp] = useState(null);
 
   const tapCountRef = useRef(0);
@@ -271,9 +287,17 @@ export default function ClassFundLedger() {
   const [newStudentSeat, setNewStudentSeat] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
 
-  // 智慧座號輸入模式：'select' (從名冊選) | 'manual' (手動輸入)
-  const [seatInputMode, setSeatInputMode] = useState('select');
+  // 學生個別存摺明細檢視 Modal
+  const [selectedStudentForModal, setSelectedStudentForModal] = useState(null);
 
+  // 記帳表單模式
+  const [incomeMode, setIncomeMode] = useState('individual'); // 'individual' | 'batch'
+  const [expenseMode, setExpenseMode] = useState('batch'); // 'batch' | 'individual'
+
+  // 批次選擇的座號陣列（預設名冊全選）
+  const [batchSelectedSeats, setBatchSelectedSeats] = useState([]);
+
+  // 表單資料
   const blankIncome = { date: todayStr(), source: '', seat: '', amount: '', term: '', note: '' };
   const blankExpense = { date: todayStr(), category: EXPENSE_CATEGORIES[0], item: '', unitPrice: '', qty: '1', payee: '', seat: '', term: '', note: '' };
   const [incomeForm, setIncomeForm] = useState(blankIncome);
@@ -282,6 +306,13 @@ export default function ClassFundLedger() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  // 當名冊變動時，預設勾選全部學生進行批次扣款
+  useEffect(() => {
+    if (roster.length > 0) {
+      setBatchSelectedSeats(roster.map(s => String(s.seat)));
+    }
+  }, [roster]);
 
   async function loadAll() {
     setLoading(true);
@@ -294,7 +325,8 @@ export default function ClassFundLedger() {
       sheetUrl: DEFAULT_SHEET_URL, 
       spreadsheetUrl: DEFAULT_SPREADSHEET_URL, 
       terms: ['114-1'], 
-      currentTerm: '114-1' 
+      currentTerm: '114-1',
+      duesConfig: {}
     };
     let loadedTransactions = [];
     let loadedRoster = [];
@@ -365,7 +397,7 @@ export default function ClassFundLedger() {
     }
 
     try {
-      const d = await StorageService.get('device-role', false); // 個人層級，不共享
+      const d = await StorageService.get('device-role', false);
       setDeviceRole(d && d.value === 'teacher' ? 'teacher' : 'viewer');
     } catch {
       setDeviceRole('viewer');
@@ -373,7 +405,6 @@ export default function ClassFundLedger() {
 
     setLoading(false);
 
-    // 如果有設定試算表網址，載入時自動執行一次同步（拉取雲端）
     if (loadedSettings.sheetUrl) {
       autoPullData(loadedSettings.sheetUrl, loadedTransactions, loadedRoster, loadedSettings);
     }
@@ -394,285 +425,182 @@ export default function ClassFundLedger() {
       try {
         result = JSON.parse(text);
       } catch (jsonErr) {
-        console.error('雲端回應無法解析為 JSON (可能為權限重置頁面)：', text.substring(0, 200));
+        console.error('雲端回應無法解析為 JSON：', text.substring(0, 200));
         setSyncStatus('error');
         if (text.includes('<!doctype') || text.includes('<html')) {
           setError('雲端回應授權頁面：請確認 Apps Script 部署設定『誰有存取權』已設為『所有人』');
         } else {
-          setError('雲端回應格式錯誤，無法完成同步');
+          setError('雲端回應格式錯誤，請檢查試算表設定');
         }
         return;
       }
-      
-      if (result.success && result.data) {
-        const cloudTrans = result.data.transactions || [];
-        const cloudRoster = result.data.roster || [];
-        const cloudSettings = result.data.settings || {};
 
-        // 如果雲端有資料，且本地與雲端不一致
-        const hasDiff = 
-          !areTransactionsEqual(localTrans, cloudTrans) ||
-          !areRostersEqual(localRoster, cloudRoster) ||
-          cloudSettings.className !== localSettings.className ||
-          cloudSettings.currentTerm !== localSettings.currentTerm;
-
-        if (hasDiff) {
-          // 如果本地沒有任何交易與名冊資料，直接套用雲端資料
-          if (localTrans.length === 0 && localRoster.length === 0) {
-            await applyCloudData(cloudTrans, cloudRoster, { ...localSettings, ...cloudSettings });
-            setSyncStatus('synced');
-          } else {
-            // 本地與雲端皆有資料且不一致，記錄雲端資料並提示衝突 Modal
-            setCloudDataTemp({ transactions: cloudTrans, roster: cloudRoster, settings: cloudSettings });
-            setSyncConflictModal('conflict');
-            setSyncStatus('pending_push');
-          }
-        } else {
-          setSyncStatus('synced');
-        }
-      } else {
+      if (!result.success) {
+        console.error('雲端拉取錯誤：', result.error);
         setSyncStatus('error');
-        setError('雲端拉取失敗：' + (result.error || '未知錯誤'));
+        setError(`雲端同步失敗：${result.error}`);
+        return;
       }
+
+      const cloudData = result.data;
+      const isTransEqual = areTransactionsEqual(localTrans, cloudData.transactions);
+      const isRosterEqual = areRostersEqual(localRoster, cloudData.roster);
+      const isSettingsEqual = areSettingsEqual(localSettings, cloudData.settings);
+
+      if (isTransEqual && isRosterEqual && isSettingsEqual) {
+        setSyncStatus('synced');
+        return;
+      }
+
+      const isLocalEmpty = (!localTrans || localTrans.length === 0) && (!localRoster || localRoster.length === 0);
+      const isCloudEmpty = (!cloudData.transactions || cloudData.transactions.length === 0) && (!cloudData.roster || cloudData.roster.length === 0);
+
+      if (isLocalEmpty && !isCloudEmpty) {
+        const merged = { ...localSettings, ...cloudData.settings };
+        await applyCloudData(cloudData.transactions, cloudData.roster, merged);
+        setSyncStatus('synced');
+        return;
+      }
+
+      if (!isLocalEmpty && isCloudEmpty) {
+        await pushLocalToCloud(url, localTrans, localRoster, localSettings);
+        return;
+      }
+
+      setCloudDataTemp(cloudData);
+      setSyncConflictModal('conflict');
+      setSyncStatus('pending_push');
     } catch (err) {
-      console.error('自動拉取雲端資料失敗：', err);
+      console.error('autoPullData exception:', err);
       setSyncStatus('error');
-      setError('連線至雲端時發生網路錯誤，請稍後重試');
     }
   };
 
-  // 套用雲端資料到本地
-  async function applyCloudData(cloudTrans, cloudRoster, mergedSettings) {
-    const finalSettings = { ...mergedSettings };
-    if (finalSettings.pin === 'HIDDEN') {
-      finalSettings.pin = settings.pin || ''; // 保留本機原有的 pin 避免被隱藏字串覆蓋
-    }
-
-    const sanitizedTrans = cloudTrans.map(tx => ({
-      ...tx,
-      date: formatBrowserDate(tx.date),
-      source: tx.type === 'income' ? (tx.source || tx.item || '') : '',
-      item: tx.type === 'expense' ? (tx.item || tx.source || '') : ''
+  const applyCloudData = async (cloudTrans, cloudRoster, cloudSettings) => {
+    const formattedTrans = (cloudTrans || []).map(t => ({
+      ...t,
+      date: formatBrowserDate(t.date),
+      source: t.type === 'income' ? (t.source || t.item || '') : '',
+      item: t.type === 'expense' ? (t.item || t.source || '') : ''
     }));
-    setTransactions(sanitizedTrans);
-    setRoster(cloudRoster);
-    setSettings(finalSettings);
-    setClassNameInput(finalSettings.className || '');
-    
-    await StorageService.set('ledger', JSON.stringify(sanitizedTrans), true);
-    await StorageService.set('roster', JSON.stringify(cloudRoster), true);
-    await StorageService.set('settings', JSON.stringify(finalSettings), true);
-  }
 
-  // 手動觸發雲端同步（合併與推送）
-  async function handleManualSync() {
-    if (!settings.sheetUrl) {
-      setError('請先在設定中填寫試算表網址');
-      return;
-    }
-    setSyncStatus('syncing');
-    setError('');
-    
-    try {
-      // 1. 先嘗試拉取最新資料
-      const queryParams = new URLSearchParams();
-      if (settings.spreadsheetUrl) queryParams.set('url', settings.spreadsheetUrl);
-      if (settings.pin) queryParams.set('auth', settings.pin);
-      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
-      const res = await fetch(`${settings.sheetUrl}${queryString}`, { method: 'GET', mode: 'cors' });
-      
-      const text = await res.text();
-      let result;
-      try {
-        result = JSON.parse(text);
-      } catch (e) {
-        console.warn('手動拉取回應非 JSON，轉由直接寫入試算表處理');
-        await pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
-        return;
-      }
-      
-      if (result.success && result.data) {
-        const cloudTrans = result.data.transactions || [];
-        const cloudRoster = result.data.roster || [];
-        const cloudSettings = result.data.settings || {};
-        
-        // 判斷是否有一致性衝突
-        const hasDiff = 
-          !areTransactionsEqual(transactions, cloudTrans) ||
-          !areRostersEqual(roster, cloudRoster) ||
-          cloudSettings.className !== settings.className ||
-          cloudSettings.currentTerm !== settings.currentTerm;
-          
-        if (hasDiff) {
-          // 儲存雲端資料，彈出衝突詢問視窗
-          setCloudDataTemp({ transactions: cloudTrans, roster: cloudRoster, settings: cloudSettings });
-          setSyncConflictModal('conflict');
-          setSyncStatus('pending_push');
-        } else {
-          // 資料已是一致，直接標記同步完成
-          setSyncStatus('synced');
-        }
-      } else {
-        // 如果雲端尚未初始化或為空，直接將本地推送上去
-        await pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
-      }
-    } catch (err) {
-      console.error('同步讀取失敗，嘗試直接推送到雲端：', err);
-      // 網路或 CORS 限制，嘗試直接寫入
-      await pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
-    }
-  }
+    setTransactions(formattedTrans);
+    await StorageService.set('ledger', JSON.stringify(formattedTrans), true);
 
-  // 將本地資料強行推送到試算表
-  async function pushLocalToCloud(url, trans, rost, sett) {
+    if (cloudRoster) {
+      setRoster(cloudRoster);
+      await StorageService.set('roster', JSON.stringify(cloudRoster), true);
+    }
+
+    if (cloudSettings) {
+      setSettings(cloudSettings);
+      setClassNameInput(cloudSettings.className || '214 班');
+      await StorageService.set('settings', JSON.stringify(cloudSettings), true);
+    }
+  };
+
+  const pushLocalToCloud = async (url, curTrans, curRoster, curSettings) => {
     setSyncStatus('syncing');
     try {
-      // 允許上傳 pin 密碼到雲端 settings 工作表，方便導師手動變更
-      const settingsToPush = { ...sett };
+      const payload = {
+        action: 'sync',
+        auth: curSettings.pin || '',
+        sheetUrl: curSettings.spreadsheetUrl || '',
+        transactions: curTrans,
+        roster: curRoster,
+        settings: curSettings
+      };
 
-      // 雙向相容性優化：為收入紀錄同時填寫 item 與 source，相容新舊版 Apps Script
-      const sanitizedTrans = trans.map(t => {
-        if (t.type === 'income') {
-          return { ...t, item: t.source || t.item || '', source: t.source || t.item || '' };
-        }
-        return t;
-      });
-
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         method: 'POST',
         mode: 'cors',
         headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-          action: 'sync',
-          auth: sett.pin || '',
-          sheetUrl: sett.spreadsheetUrl || '',
-          transactions: sanitizedTrans,
-          roster: rost,
-          settings: settingsToPush
-        })
+        body: JSON.stringify(payload)
       });
-      
-      if (!response.ok) throw new Error('Post failed with status ' + response.status);
-      
-      const text = await response.text();
-      let resJson;
-      try {
-        resJson = JSON.parse(text);
-      } catch (jErr) {
-        if (text.includes('<!doctype') || text.includes('<html')) {
-          throw new Error('雲端回應授權頁面，請確認 Apps Script 設定「誰有存取權：所有人」');
-        }
-        throw new Error('雲端回應無法解析');
-      }
-      
-      if (resJson.success) {
+
+      const json = await res.json();
+      if (json.success) {
         setSyncStatus('synced');
         setSyncConflictModal(null);
+        setCloudDataTemp(null);
       } else {
-        console.error('雲端寫入失敗，完整回應資料：', resJson);
+        console.error('推送到雲端失敗：', json.error);
         setSyncStatus('error');
-        setError('雲端寫入失敗：' + (resJson.error || '未知錯誤'));
+        setError(`推送到雲端失敗：${json.error}`);
       }
     } catch (err) {
-      console.error('推送雲端失敗：', err);
-      // 降級處理：若為 CORS 限制，採用 no-cors 盡力而為模式
-      try {
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'sync',
-            auth: sett.pin || '',
-            sheetUrl: sett.spreadsheetUrl || '',
-            transactions: trans,
-            roster: rost,
-            settings: settingsToPush
-          })
-        });
-        // 不偽裝成完全 synced 驗證成功，而是標記 pending_push 並提醒使用者
-        setSyncStatus('pending_push');
-        setSyncConflictModal(null);
-        setError('已發送雲端寫入請求（no-cors 模式）。跨網域限制下無法立即驗證結果，建議重載網頁確認。');
-      } catch (e) {
-        setSyncStatus('error');
-        setError('同步連線失敗，請檢查網路狀態或 GAS 部署狀態');
-      }
+      console.error('pushLocalToCloud exception:', err);
+      setSyncStatus('error');
+      setError('推送到雲端連線失敗，請檢查網路或稍後再試');
+    }
+  };
+
+  const handleManualSync = () => {
+    if (!settings.sheetUrl) {
+      setEditingBackup(true);
+      return;
+    }
+    autoPullData(settings.sheetUrl, transactions, roster, settings);
+  };
+
+  async function saveTransactions(next) {
+    setTransactions(next);
+    await StorageService.set('ledger', JSON.stringify(next), true);
+    if (settings.sheetUrl) {
+      pushLocalToCloud(settings.sheetUrl, next, roster, settings);
     }
   }
 
-  // 隱藏手勢：快速點擊班級名稱 5 下才會叫出教師密碼視窗
-  function handleSecretTap() {
+  async function saveRoster(next) {
+    setRoster(next);
+    await StorageService.set('roster', JSON.stringify(next), true);
+    if (settings.sheetUrl) {
+      pushLocalToCloud(settings.sheetUrl, transactions, next, settings);
+    }
+  }
+
+  async function saveSettings(next) {
+    setSettings(next);
+    await StorageService.set('settings', JSON.stringify(next), true);
+    if (next.sheetUrl) {
+      pushLocalToCloud(next.sheetUrl, transactions, roster, next);
+    }
+  }
+
+  const handleSecretTap = () => {
     tapCountRef.current += 1;
     if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
-    tapTimerRef.current = setTimeout(() => { tapCountRef.current = 0; }, 2500);
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0;
+    }, 2000);
+
     if (tapCountRef.current >= 5) {
       tapCountRef.current = 0;
+      setDeviceRole('teacher');
+      StorageService.set('device-role', 'teacher', false);
       openStamp();
     }
-  }
+  };
 
-  async function forgetDevice() {
+  const forgetDevice = async () => {
+    await StorageService.delete('device-role', false);
+    setDeviceRole('viewer');
     setTeacherMode(false);
     setShowForm(false);
-    setDeviceRole('viewer');
-    if (tab === 'unpaid') setTab('income');
-    try {
-      await StorageService.delete('device-role', false);
-    } catch {
-      /* ignore */
-    }
-  }
+  };
 
-  const saveTransactions = useCallback(async (next) => {
-    setTransactions(next);
-    try {
-      const res = await StorageService.set('ledger', JSON.stringify(next), true);
-      if (!res) setError('儲存失敗，請檢查儲存空間');
-      else {
-        setSyncStatus('pending_push');
-        // 異步嘗試推送到雲端
-        if (settings.sheetUrl) {
-          pushLocalToCloud(settings.sheetUrl, next, roster, settings);
-        }
-      }
-    } catch {
-      setError('儲存失敗，請檢查儲存空間');
-    }
-  }, [roster, settings]);
+  const activeRosterSorted = useMemo(() => {
+    return roster.slice().sort((a, b) => Number(a.seat) - Number(b.seat));
+  }, [roster]);
 
-  const saveSettings = useCallback(async (next) => {
-    setSettings(next);
-    try {
-      const res = await StorageService.set('settings', JSON.stringify(next), true);
-      if (!res) setError('儲存失敗，請檢查儲存空間');
-      else {
-        setSyncStatus('pending_push');
-        if (next.sheetUrl) {
-          pushLocalToCloud(next.sheetUrl, transactions, roster, next);
-        }
-      }
-    } catch {
-      setError('儲存失敗，請檢查儲存空間');
-    }
-  }, [transactions, roster]);
+  // 學期列表
+  const termsList = useMemo(() => {
+    const set = new Set(settings.terms || []);
+    transactions.forEach((t) => { if (t.term) set.add(t.term); });
+    return Array.from(set).sort();
+  }, [settings.terms, transactions]);
 
-  const saveRoster = useCallback(async (next) => {
-    setRoster(next);
-    try {
-      const res = await StorageService.set('roster', JSON.stringify(next), true);
-      if (!res) setError('儲存失敗，請檢查儲存空間');
-      else {
-        setSyncStatus('pending_push');
-        if (settings.sheetUrl) {
-          pushLocalToCloud(settings.sheetUrl, transactions, next, settings);
-        }
-      }
-    } catch {
-      setError('儲存失敗，請檢查儲存空間');
-    }
-  }, [transactions, settings]);
-
+  // 全局收支與餘額
   const totals = useMemo(() => {
     let income = 0, expense = 0;
     for (const t of transactions) {
@@ -682,26 +610,35 @@ export default function ClassFundLedger() {
     return { income, expense, balance: income - expense };
   }, [transactions]);
 
+  // 篩選學期收支
+  const filteredTotals = useMemo(() => {
+    if (termFilter === 'all') return null;
+    let income = 0, expense = 0;
+    for (const t of transactions) {
+      if (t.term !== termFilter) continue;
+      if (t.type === 'income') income += Number(t.amount) || 0;
+      else expense += Number(t.amount) || 0;
+    }
+    return { income, expense, balance: income - expense };
+  }, [transactions, termFilter]);
+
+  // 類別統計（圈餅圖）
   const categoryBreakdown = useMemo(() => {
     const map = {};
     for (const t of transactions) {
       if (t.type !== 'expense') continue;
-      map[t.category] = (map[t.category] || 0) + (Number(t.amount) || 0);
+      if (termFilter !== 'all' && t.term !== termFilter) continue;
+      const cat = t.category || '其他';
+      map[cat] = (map[cat] || 0) + (Number(t.amount) || 0);
     }
-    const arr = Object.entries(map).map(([category, amount]) => ({ category, amount }));
-    arr.sort((a, b) => b.amount - a.amount);
-    return arr.slice(0, 6);
-  }, [transactions]);
+    return Object.keys(map).map((k) => ({ category: k, amount: map[k] })).sort((a, b) => b.amount - a.amount);
+  }, [transactions, termFilter]);
 
+  // 結餘趨勢折線圖
   const balanceTrend = useMemo(() => {
-    // 按日期從小到大排序所有交易
-    const sorted = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = transactions.slice().sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
     let current = 0;
-    const points = [];
-    
-    // 起點
-    points.push({ date: '起點', balance: 0 });
-    
+    const points = [{ date: '起點', balance: 0 }];
     for (const t of sorted) {
       if (t.type === 'income') {
         current += Number(t.amount) || 0;
@@ -713,37 +650,53 @@ export default function ClassFundLedger() {
     return points;
   }, [transactions]);
 
-  const termsList = useMemo(() => {
-    const set = new Set(settings.terms || []);
-    transactions.forEach((t) => { if (t.term) set.add(t.term); });
-    return Array.from(set).sort();
-  }, [settings.terms, transactions]);
+  // 學生個人專戶資產負債計算（Student Sub-accounts）
+  const studentAccounts = useMemo(() => {
+    const map = {};
+    activeRosterSorted.forEach(s => {
+      map[String(s.seat)] = {
+        seat: String(s.seat),
+        name: s.name,
+        income: 0,
+        expense: 0,
+        balance: 0,
+        incomes: [],
+        expenses: []
+      };
+    });
 
-  const filteredTotals = useMemo(() => {
-    if (termFilter === 'all') return null;
-    let income = 0, expense = 0;
-    for (const t of transactions) {
-      if (t.term !== termFilter) continue;
-      if (t.type === 'income') income += Number(t.amount) || 0;
-      else expense += Number(t.amount) || 0;
-    }
-    return { income, expense };
-  }, [transactions, termFilter]);
+    transactions.forEach(t => {
+      if (termFilter !== 'all' && t.term !== termFilter) return;
+      const seatKey = String(t.seat || '').trim();
+      if (!seatKey || !map[seatKey]) return;
 
-  const unpaidInfo = useMemo(() => {
-    if (termFilter === 'all') return null;
-    const paidSeats = new Set(
-      transactions
-        .filter((t) => t.type === 'income' && t.term === termFilter && String(t.seat || '').trim())
-        .map((t) => String(t.seat).trim())
-    );
-    const sortedRoster = roster.slice().sort((a, b) => Number(a.seat) - Number(b.seat));
-    const unpaid = sortedRoster.filter((s) => !paidSeats.has(String(s.seat).trim()));
-    const paidCount = sortedRoster.length - unpaid.length;
-    return { unpaid, paidCount, total: sortedRoster.length };
-  }, [transactions, roster, termFilter]);
+      const amt = Number(t.amount) || 0;
+      if (t.type === 'income') {
+        map[seatKey].income += amt;
+        map[seatKey].incomes.push(t);
+      } else {
+        map[seatKey].expense += amt;
+        map[seatKey].expenses.push(t);
+      }
+    });
+
+    Object.values(map).forEach(acc => {
+      acc.balance = acc.income - acc.expense;
+    });
+
+    return Object.values(map).sort((a, b) => Number(a.seat) - Number(b.seat));
+  }, [activeRosterSorted, transactions, termFilter]);
+
+  // 學生專戶健康度統計
+  const accountStats = useMemo(() => {
+    const total = studentAccounts.length;
+    const okCount = studentAccounts.filter(a => a.balance >= 0).length;
+    const dueCount = total - okCount;
+    return { total, okCount, dueCount };
+  }, [studentAccounts]);
 
   const sortedList = useMemo(() => {
+    if (tab === 'students') return [];
     return transactions
       .filter((t) => t.type === tab)
       .filter((t) => termFilter === 'all' || t.term === termFilter)
@@ -755,7 +708,6 @@ export default function ClassFundLedger() {
     if (teacherMode) {
       setTeacherMode(false);
       setShowForm(false);
-      if (tab === 'unpaid') setTab('income');
       return;
     }
     setPinInput('');
@@ -791,66 +743,133 @@ export default function ClassFundLedger() {
     }, 380);
   }
 
-  // 智慧座號選擇器變更處理
-  const handleRosterSeatSelect = (e) => {
-    const selectedSeat = e.target.value;
-    if (selectedSeat === '__manual__') {
-      setSeatInputMode('manual');
-      setIncomeForm({ ...incomeForm, seat: '' });
-      return;
-    }
-    
-    const student = roster.find(s => String(s.seat) === String(selectedSeat));
-    const termLabel = incomeForm.term || settings.currentTerm || '';
-    const autoSource = student ? `${termLabel} 班費 - ${student.name}` : incomeForm.source;
-    
-    setIncomeForm({
-      ...incomeForm,
-      seat: selectedSeat,
-      source: incomeForm.source ? incomeForm.source : autoSource
-    });
+  // 批次選擇勾選/取消
+  const toggleBatchSeat = (seatStr) => {
+    setBatchSelectedSeats(prev => 
+      prev.includes(seatStr) ? prev.filter(s => s !== seatStr) : [...prev, seatStr]
+    );
   };
 
-  async function addIncome(e) {
+  const selectAllBatchSeats = () => {
+    setBatchSelectedSeats(roster.map(s => String(s.seat)));
+  };
+
+  const clearBatchSeats = () => {
+    setBatchSelectedSeats([]);
+  };
+
+  // 新增預繳 (Income)
+  async function handleAddIncome(e) {
     e.preventDefault();
-    if (!incomeForm.source || !incomeForm.amount) return;
-    const entry = {
-      id: uid(), 
-      type: 'income', 
-      date: incomeForm.date,
-      source: incomeForm.source, 
-      seat: incomeForm.seat,
-      amount: Number(incomeForm.amount),
-      term: incomeForm.term || settings.currentTerm || '',
-      note: incomeForm.note || '',
-    };
-    await saveTransactions([...transactions, entry]);
-    setIncomeForm({ ...blankIncome, term: settings.currentTerm || '' });
-    setSeatInputMode('select'); // 重置輸入模式
-    setShowForm(false);
+    if (!incomeForm.amount) return;
+
+    const termVal = incomeForm.term || settings.currentTerm || '';
+    const dateVal = incomeForm.date || todayStr();
+    const noteVal = incomeForm.note || '';
+
+    if (incomeMode === 'batch') {
+      if (batchSelectedSeats.length === 0) {
+        setError('請至少選擇一位學生進行批次預繳登記');
+        return;
+      }
+      const unitAmt = Number(incomeForm.amount);
+      const newEntries = batchSelectedSeats.map(seatStr => {
+        const student = roster.find(s => String(s.seat) === seatStr);
+        const namePart = student ? ` - ${student.name}` : '';
+        return {
+          id: uid(),
+          type: 'income',
+          date: dateVal,
+          source: incomeForm.source || `${termVal} 教材預繳費${namePart}`,
+          seat: seatStr,
+          amount: unitAmt,
+          term: termVal,
+          note: noteVal
+        };
+      });
+
+      await saveTransactions([...transactions, ...newEntries]);
+      setIncomeForm({ ...blankIncome, term: settings.currentTerm || '' });
+      setShowForm(false);
+    } else {
+      if (!incomeForm.seat) {
+        setError('請選擇或指定預繳學生座號');
+        return;
+      }
+      const student = roster.find(s => String(s.seat) === String(incomeForm.seat));
+      const namePart = student ? ` - ${student.name}` : '';
+      const entry = {
+        id: uid(),
+        type: 'income',
+        date: dateVal,
+        source: incomeForm.source || `${termVal} 教材預繳費${namePart}`,
+        seat: String(incomeForm.seat),
+        amount: Number(incomeForm.amount),
+        term: termVal,
+        note: noteVal
+      };
+
+      await saveTransactions([...transactions, entry]);
+      setIncomeForm({ ...blankIncome, term: settings.currentTerm || '' });
+      setShowForm(false);
+    }
   }
 
-  async function addExpense(e) {
+  // 新增教材扣款 (Expense)
+  async function handleAddExpense(e) {
     e.preventDefault();
     if (!expenseForm.item || !expenseForm.unitPrice) return;
-    const amount = (Number(expenseForm.unitPrice) || 0) * (Number(expenseForm.qty) || 1);
-    const entry = {
-      id: uid(), 
-      type: 'expense', 
-      date: expenseForm.date,
-      category: expenseForm.category, 
-      item: expenseForm.item,
-      unitPrice: Number(expenseForm.unitPrice), 
-      qty: Number(expenseForm.qty) || 1,
-      payee: expenseForm.payee, 
-      seat: expenseForm.seat,
-      amount,
-      term: expenseForm.term || settings.currentTerm || '',
-      note: expenseForm.note || '',
-    };
-    await saveTransactions([...transactions, entry]);
-    setExpenseForm({ ...blankExpense, term: settings.currentTerm || '' });
-    setShowForm(false);
+
+    const termVal = expenseForm.term || settings.currentTerm || '';
+    const dateVal = expenseForm.date || todayStr();
+    const noteVal = expenseForm.note || '';
+    const unitPriceNum = Number(expenseForm.unitPrice) || 0;
+
+    if (expenseMode === 'batch') {
+      if (batchSelectedSeats.length === 0) {
+        setError('請至少選擇一位扣款學生');
+        return;
+      }
+      const newEntries = batchSelectedSeats.map(seatStr => ({
+        id: uid(),
+        type: 'expense',
+        date: dateVal,
+        category: expenseForm.category,
+        item: expenseForm.item,
+        unitPrice: unitPriceNum,
+        qty: 1,
+        amount: unitPriceNum,
+        payee: expenseForm.payee || '',
+        seat: seatStr,
+        term: termVal,
+        note: noteVal
+      }));
+
+      await saveTransactions([...transactions, ...newEntries]);
+      setExpenseForm({ ...blankExpense, term: settings.currentTerm || '' });
+      setShowForm(false);
+    } else {
+      const qtyNum = Number(expenseForm.qty) || 1;
+      const totalAmount = unitPriceNum * qtyNum;
+      const entry = {
+        id: uid(),
+        type: 'expense',
+        date: dateVal,
+        category: expenseForm.category,
+        item: expenseForm.item,
+        unitPrice: unitPriceNum,
+        qty: qtyNum,
+        amount: totalAmount,
+        payee: expenseForm.payee || '',
+        seat: expenseForm.seat ? String(expenseForm.seat) : '',
+        term: termVal,
+        note: noteVal
+      };
+
+      await saveTransactions([...transactions, entry]);
+      setExpenseForm({ ...blankExpense, term: settings.currentTerm || '' });
+      setShowForm(false);
+    }
   }
 
   async function doDelete(id) {
@@ -879,7 +898,7 @@ export default function ClassFundLedger() {
     const match = settings.sheetUrl.match(/macros\/s\/([^\/]+)\/exec/);
     const apiId = match ? match[1] : '';
     if (!apiId) return;
-    const shareUrl = `${window.location.origin}${window.location.pathname}?api=${apiId}`;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?view=parent&api=${apiId}`;
     
     navigator.clipboard.writeText(shareUrl)
       .then(() => {
@@ -948,104 +967,81 @@ export default function ClassFundLedger() {
       
       if (!response.ok) throw new Error('Network response was not ok');
       const resJson = await response.json();
-      
       if (resJson.success) {
+        alert(`座號 ${seat}（${name}）家長 PIN 碼已重設，家長下次登入時可重新設定。`);
         setSyncStatus('synced');
-        alert(`座號 ${seat}（${name}）的家長密碼已重設成功！`);
       } else {
-        console.error('重設密碼失敗：', resJson);
+        setError(`重設失敗：${resJson.error || '未知錯誤'}`);
         setSyncStatus('error');
-        setError('重設密碼失敗：' + (resJson.error || '未知錯誤'));
       }
     } catch (err) {
-      console.error('重設密碼失敗：', err);
-      try {
-        await fetch(settings.sheetUrl, {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'resetParentPin',
-            auth: settings.pin || '',
-            sheetUrl: settings.spreadsheetUrl || '',
-            seat: String(seat)
-          })
-        });
-        setSyncStatus('synced');
-        alert(`已發送重設密碼請求（無法驗證結果，請稍後確認試算表）`);
-      } catch (e) {
-        setSyncStatus('error');
-        setError('同步連線失敗，請檢查網路狀態');
-      }
+      console.error('Reset PIN error:', err);
+      setError('連線失敗，請檢查網路後再試');
+      setSyncStatus('error');
     }
   }
 
   const handleRosterImport = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files && e.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
-    const isCsv = file.name.endsWith('.csv');
     reader.onload = async (evt) => {
       try {
-        let rows = [];
-        if (isCsv) {
-          const text = evt.target.result;
-          rows = text.split('\n').map(line => {
-            return line.split(',').map(cell => cell.replace(/^["']|["']$/g, '').trim());
-          });
-        } else {
-          const data = new Uint8Array(evt.target.result);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-        }
-        const importedRoster = parseRosterFromRows(rows);
-        if (importedRoster.length === 0) {
-          setError('找不到學生名冊資料，請確定檔案包含「座號」與「姓名」兩欄');
+        const data = new Uint8Array(evt.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        
+        const parsedRoster = parseRosterFromRows(rows);
+        if (parsedRoster.length === 0) {
+          setError('未辨識出學生座號或姓名，請確認 Excel 首列包含「座號」與「姓名」欄位');
           return;
         }
-        const rosterMap = {};
-        roster.forEach(student => {
-          rosterMap[String(student.seat)] = student.name;
-        });
-        importedRoster.forEach(student => {
-          rosterMap[String(student.seat)] = student.name;
-        });
-        const newRoster = Object.keys(rosterMap).map(seat => ({
-          seat: Number(seat),
-          name: rosterMap[seat]
-        })).sort((a, b) => a.seat - b.seat);
-        await saveRoster(newRoster);
-        setError('');
+
+        const confirmMsg = `已辨識出 ${parsedRoster.length} 位學生名冊資料。\n\n點選「確定」將以此名冊覆蓋現有名冊。\n（若有既有資料將自動同步至雲端）`;
+        if (window.confirm(confirmMsg)) {
+          await saveRoster(parsedRoster);
+        }
       } catch (err) {
-        console.error('匯入名冊失敗：', err);
-        setError('讀取檔案失敗，請確定檔案格式正確');
+        console.error('名冊解析失敗：', err);
+        setError('名冊檔案解析失敗，請確認檔案格式是否正確（.xlsx, .xls 或 .csv）');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
       }
     };
-    if (isCsv) {
-      reader.readAsText(file, 'UTF-8');
-    } else {
-      reader.readAsArrayBuffer(file);
-    }
-    e.target.value = '';
+    reader.readAsArrayBuffer(file);
   };
 
-  const maxCat = Math.max(1, ...categoryBreakdown.map((c) => c.amount));
-  const activeRosterSorted = useMemo(() => {
-    return roster.slice().sort((a, b) => Number(a.seat) - Number(b.seat));
-  }, [roster]);
+  // 匯出 Excel 對帳報表
+  const handleExportStatement = () => {
+    const exportData = studentAccounts.map(acc => ({
+      '座號': acc.seat,
+      '學生姓名': acc.name,
+      '本學期預繳總額': acc.income,
+      '教材累計扣款': acc.expense,
+      '專戶目前餘額': acc.balance,
+      '專戶狀態': acc.balance >= 0 ? '餘額充足' : '需補繳'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '教材費專戶對帳表');
+    XLSX.writeFile(wb, `${settings.className || '班級'}_${termFilter === 'all' ? '歷年' : termFilter}_教材費專戶對帳表.xlsx`);
+  };
+
+  if (loading) {
+    return <div className="cfl-root" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', color: 'var(--text-soft)' }}>系統載入中...</div>;
+  }
 
   return (
     <div className="cfl-root">
-      {/* 頂部 Sticky Header (參考提案平台的樣式與行為) */}
       <header>
         <div className="header-inner">
-          <div className="brand" onClick={() => window.location.reload()}>
-            班費紀錄系統
-            <small>{settings.className ? `${settings.className} ｜ ` : ''}即時同步帳本 ｜ 智慧未繳比對</small>
-            
-            {/* 雲端同步狀態標記放在 Header 左側 */}
+          <div className="brand" onClick={deviceRole !== 'teacher' ? handleSecretTap : undefined}>
+            教材費紀錄系統
+            <small>學生專戶專款專用管理 · {settings.className || '214 班'}</small>
             {settings.sheetUrl && (
               <div className="cfl-sync-status-row">
                 <span className={`cfl-sync-badge ${
@@ -1072,11 +1068,15 @@ export default function ClassFundLedger() {
             )}
           </div>
           <nav>
-            <button className={tab === 'income' ? 'active' : ''} onClick={() => { setTab('income'); setShowForm(false); }}>收入紀錄</button>
-            <button className={tab === 'expense' ? 'active' : ''} onClick={() => { setTab('expense'); setShowForm(false); }}>支出紀錄</button>
-            {teacherMode && (
-              <button className={tab === 'unpaid' ? 'active' : ''} onClick={() => { setTab('unpaid'); setShowForm(false); }}>未繳費名單</button>
-            )}
+            <button className={tab === 'students' ? 'active' : ''} onClick={() => { setTab('students'); setShowForm(false); }}>
+              學生專戶總覽
+            </button>
+            <button className={tab === 'income' ? 'active' : ''} onClick={() => { setTab('income'); setShowForm(false); }}>
+              預繳紀錄
+            </button>
+            <button className={tab === 'expense' ? 'active' : ''} onClick={() => { setTab('expense'); setShowForm(false); }}>
+              教材扣款
+            </button>
           </nav>
         </div>
       </header>
@@ -1153,11 +1153,11 @@ export default function ClassFundLedger() {
                           style={{ width: '100%', padding: '8px', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                           onClick={copyParentShareUrl}
                         >
-                          <Plus size={14} /> 複製家長唯讀分享連結
+                          <Plus size={14} /> 複製家長專戶查詢連結（獨立存摺視圖）
                         </button>
                         {shareLinkCopied && (
                           <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4, textAlign: 'center' }}>
-                            已複製家長唯讀分享連結！您可以直接將其傳送給學生家長。
+                            已複製家長查詢連結！家長登入後僅能看到自身子女之專戶扣款明細與餘額。
                           </div>
                         )}
                       </div>
@@ -1168,15 +1168,12 @@ export default function ClassFundLedger() {
                   </div>
                   {backupHelp && (
                     <div className="cfl-backup-help">
-                      <strong>【推薦方式】繫結型試算表 Apps Script（免設定試算表網址）：</strong><br />
+                      <strong>【推薦方式】繫結型試算表 Apps Script：</strong><br />
                       1. 在您的 Google 試算表中，點選「擴充功能」→「Apps Script」。<br />
                       2. 將本專案根目錄的 <code>google-apps-script.js</code> 內容複製貼入並儲存。<br />
-                      3. 點選右上角「部署」→「新增部署」，類型選擇「網頁應用程式」（<strong>僅第一次設定時使用「新增部署」</strong>）。<br />
+                      3. 點選右上角「部署」→「管理部署」/「新增部署」，類型選擇「網頁應用程式」。<br />
                       4. 設定「執行身分」為「我」，「誰有存取權」為「所有人」，點選「部署」並授權。<br />
-                      5. 複製產生的「網頁應用程式 URL」並貼在上方的「網頁應用程式網址」即可。<br />
-                      <strong style={{ color: '#b34000' }}>⚠️ 往後更新 GAS 程式碼時，請選「管理部署」→ 編輯現有部署 → 新版本 → 部署，切勿點「新增部署」，否則已分享給家長的查詢連結將全部失效。</strong><br /><br />
-                      <strong>【獨立版 Apps Script 方式】：</strong><br />
-                      若您的 Apps Script 是在 Google 雲端硬碟中單獨建立（而非自試算表中點選開啟），則必須在上方第二欄填入該 Google 試算表的網址，以便 Apps Script 辨識要存取哪一個檔案。
+                      5. 複製產生的「網頁應用程式 URL」並貼在上方的「網頁應用程式網址」即可。
                     </div>
                   )}
                 </div>
@@ -1192,16 +1189,15 @@ export default function ClassFundLedger() {
                 >
                   <Stamp size={22} />
                 </button>
-                <div className="cfl-stamp-label">{teacherMode ? '教師模式' : '檢視模式'}</div>
+                <div className="cfl-stamp-label">{teacherMode ? '教師管理模式' : '檢視模式'}</div>
               </div>
             )}
           </div>
 
-          {/* 全新 Dashboard 三卡片佈局 */}
+          {/* 專戶儀表板 */}
           <div className="cfl-dashboard">
-            {/* 中間：結餘主卡 */}
             <div className={`cfl-dash-main ${totals.balance < 0 ? 'neg' : ''}`}>
-              <div className="cfl-dash-main-label">班費總餘額</div>
+              <div className="cfl-dash-main-label">教材專戶總結餘</div>
               <div className="cfl-dash-main-value cfl-mono">
                 NT$ {money(totals.balance)}
               </div>
@@ -1212,23 +1208,22 @@ export default function ClassFundLedger() {
                     style={{ width: `${Math.min(100, Math.round((totals.expense / totals.income) * 100))}%` }}
                   />
                   <div className="cfl-dash-progress-label">
-                    已支出 {Math.min(100, Math.round((totals.expense / totals.income) * 100))}%
+                    總教材款已扣抵 {Math.min(100, Math.round((totals.expense / totals.income) * 100))}%
                   </div>
                 </div>
               )}
             </div>
 
-            {/* 左右小卡 */}
             <div className="cfl-dash-side-row">
               <div className="cfl-dash-side income">
                 <div className="cfl-dash-side-label">
-                  <TrendingUp size={12} />總收入
+                  <TrendingUp size={12} />總預繳 (儲值)
                 </div>
                 <div className="cfl-dash-side-value cfl-mono">+{money(totals.income)}</div>
               </div>
               <div className="cfl-dash-side expense">
                 <div className="cfl-dash-side-label">
-                  <TrendingDown size={12} />總支出
+                  <TrendingDown size={12} />總教材支出
                 </div>
                 <div className="cfl-dash-side-value cfl-mono">-{money(totals.expense)}</div>
               </div>
@@ -1238,23 +1233,27 @@ export default function ClassFundLedger() {
 
         {teacherMode && (
           <div className="cfl-note">
-            目前為教師模式，可新增或刪除紀錄。再按一次印章即可鎖回檢視模式。<br /><span className="cfl-forget" onClick={forgetDevice}>不是自己的裝置？點此忘記此裝置</span>
+            目前為教師模式，可登記預繳、進行批次或個別教材扣款。再按一次印章即可鎖回檢視模式。<br />
+            <span className="cfl-forget" onClick={forgetDevice}>不是自己的裝置？點此忘記此裝置</span>
           </div>
         )}
 
+        {/* 學期切換欄 */}
         <div className="cfl-term-row">
           <label>學期</label>
           <select value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-            <option value="all">全部</option>
+            <option value="all">全部學期</option>
             {termsList.map((tm) => <option key={tm} value={tm}>{tm}</option>)}
           </select>
           {termFilter !== 'all' && filteredTotals && (
             <span className="cfl-term-subtotal cfl-mono">
-              本學期收入 {money(filteredTotals.income)}｜支出 {money(filteredTotals.expense)}
+              本學期預繳 {money(filteredTotals.income)}｜扣款 {money(filteredTotals.expense)}｜結餘 {money(filteredTotals.balance)}
             </span>
           )}
           {teacherMode && (
-            <button className="cfl-classname-edit-btn" style={{ marginLeft: 'auto' }} onClick={() => setEditingTerms((v) => !v)}>管理學期</button>
+            <button className="cfl-classname-edit-btn" style={{ marginLeft: 'auto' }} onClick={() => setEditingTerms((v) => !v)}>
+              管理學期
+            </button>
           )}
         </div>
 
@@ -1264,7 +1263,7 @@ export default function ClassFundLedger() {
               <input
                 className="cfl-classname-input"
                 style={{ flex: 1 }}
-                placeholder="新增學期，例：113-2"
+                placeholder="新增學期，例：114-2"
                 value={newTermInput}
                 onChange={(e) => setNewTermInput(e.target.value)}
               />
@@ -1282,37 +1281,104 @@ export default function ClassFundLedger() {
                 ))}
               </div>
             )}
-            <div className="cfl-backup-help">新增紀錄時會預設帶入目前學期，您仍可以在表單裡改成別的學期。班費總餘額永遠是累計金額，學期只是用來篩選查看、跟未繳費名單比對，不會把餘額歸零重算。</div>
           </div>
         )}
 
-        {tab === 'unpaid' && teacherMode ? (
-          <div className="cfl-table-wrap">
-            {termFilter === 'all' ? (
-              <div className="cfl-empty">請先在上方選擇一個學期，才能比對未繳費名單。</div>
-            ) : roster.length === 0 ? (
-              <div className="cfl-empty">名冊還是空的，{teacherMode ? '請在下方新增學生。' : '請導師先建立學生名冊。'}</div>
-            ) : (
-              <>
-                <div className="cfl-unpaid-summary">
-                  {termFilter} 已繳 {unpaidInfo.paidCount}／{unpaidInfo.total} 人
-                </div>
-                {unpaidInfo.unpaid.length === 0 ? (
-                  <div className="cfl-empty">全班都繳齊了 🎉</div>
-                ) : (
-                  unpaidInfo.unpaid.map((s) => (
-                    <div className="cfl-row" key={s.seat} style={{ gridTemplateColumns: '78px 1fr 26px' }}>
-                      <div className="cfl-row-date cfl-mono">座號 {s.seat}</div>
-                      <div className="cfl-row-main"><div className="cfl-row-title">{s.name}</div></div>
-                      {teacherMode && <button className="cfl-row-del" onClick={() => deleteStudent(s.seat)}><Trash2 size={15} /></button>}
-                    </div>
-                  ))
+        {/* TAB 1: 學生個人專戶總覽 */}
+        {tab === 'students' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--primary-dark)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={16} />
+                <span>全班學生教材專戶 ({studentAccounts.length} 人)</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', background: '#dcfce7', padding: '2px 8px', borderRadius: 99 }}>
+                  正常 {accountStats.okCount} 人
+                </span>
+                {accountStats.dueCount > 0 && (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--red)', background: '#fee2e2', padding: '2px 8px', borderRadius: 99 }}>
+                    需補繳 {accountStats.dueCount} 人
+                  </span>
                 )}
-              </>
+              </div>
+              <button 
+                type="button" 
+                className="cfl-btn-ghost" 
+                style={{ padding: '6px 12px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: 4 }}
+                onClick={handleExportStatement}
+              >
+                <FileSpreadsheet size={14} /> 匯出對帳報表
+              </button>
+            </div>
+
+            {studentAccounts.length === 0 ? (
+              <div className="cfl-empty">
+                目前尚無學生名冊，請{teacherMode ? '在下方新增學生或匯入 Excel 名冊。' : '導師先建立學生名冊。'}
+              </div>
+            ) : (
+              <div className="cfl-student-grid">
+                {studentAccounts.map(acc => {
+                  const isOk = acc.balance >= 0;
+                  return (
+                    <div key={acc.seat} className="cfl-student-card">
+                      <div>
+                        <div className="cfl-student-card-header">
+                          <div>
+                            <span className="cfl-student-seat">座號 {acc.seat}</span>
+                            <div className="cfl-student-name">{acc.name}</div>
+                          </div>
+                          <span className={`cfl-student-badge ${isOk ? 'ok' : 'due'}`}>
+                            {isOk ? '餘額充足' : `需補繳 NT$ ${money(Math.abs(acc.balance))}`}
+                          </span>
+                        </div>
+
+                        <div className="cfl-student-stats" style={{ marginTop: 12 }}>
+                          <div className="cfl-student-stat-item">
+                            <span className="cfl-student-stat-label">累計預繳</span>
+                            <span className="cfl-student-stat-val" style={{ color: 'var(--green)' }}>+{money(acc.income)}</span>
+                          </div>
+                          <div className="cfl-student-stat-item">
+                            <span className="cfl-student-stat-label">教材扣款</span>
+                            <span className="cfl-student-stat-val" style={{ color: 'var(--red)' }}>-{money(acc.expense)}</span>
+                          </div>
+                          <div className="cfl-student-stat-item">
+                            <span className="cfl-student-stat-label">專戶結餘</span>
+                            <span className="cfl-student-stat-val" style={{ color: isOk ? 'var(--text)' : 'var(--red)' }}>
+                              ${money(acc.balance)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="cfl-student-actions">
+                        <button
+                          type="button"
+                          className="cfl-classname-edit-btn"
+                          style={{ padding: '4px 10px', fontSize: '11px' }}
+                          onClick={() => setSelectedStudentForModal(acc)}
+                        >
+                          查閱個人存摺明細
+                        </button>
+                        {teacherMode && (
+                          <button
+                            type="button"
+                            className="cfl-row-del"
+                            title="重設家長 PIN 碼"
+                            onClick={() => handleResetParentPin(acc.seat, acc.name)}
+                            style={{ color: 'var(--accent)', padding: 4 }}
+                          >
+                            <Key size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
 
+            {/* 名冊管理區塊 (教師模式) */}
             {teacherMode && (
-              <div className="cfl-addbar">
+              <div className="cfl-addbar" style={{ marginTop: 24 }}>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: 16 }}>
                   <button 
                     type="button" 
@@ -1332,15 +1398,21 @@ export default function ClassFundLedger() {
                 </div>
                 <form className="cfl-form" onSubmit={addStudent} style={{ marginTop: 0 }}>
                   <div className="cfl-form-grid">
-                    <div className="cfl-field"><label>座號</label><input type="number" min="1" placeholder="例：5" value={newStudentSeat} onChange={(e) => setNewStudentSeat(e.target.value)} required /></div>
-                    <div className="cfl-field"><label>姓名</label><input placeholder="例：王小明" value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} required /></div>
+                    <div className="cfl-field">
+                      <label>座號</label>
+                      <input type="number" min="1" placeholder="例：5" value={newStudentSeat} onChange={(e) => setNewStudentSeat(e.target.value)} required />
+                    </div>
+                    <div className="cfl-field">
+                      <label>姓名</label>
+                      <input placeholder="例：王小明" value={newStudentName} onChange={(e) => setNewStudentName(e.target.value)} required />
+                    </div>
                   </div>
                   <div className="cfl-form-actions">
                     <button type="submit" className="cfl-btn-primary">加入名冊</button>
                   </div>
                 </form>
                 {roster.length > 0 && (
-                  <div className="cfl-roster-list">
+                  <div className="cfl-roster-list" style={{ marginTop: 14 }}>
                     {activeRosterSorted.map((s) => (
                       <span key={s.seat} className="cfl-roster-chip">
                         {s.seat}．{s.name}
@@ -1353,125 +1425,109 @@ export default function ClassFundLedger() {
               </div>
             )}
           </div>
-        ) : (
+        )}
+
+        {/* TAB 2 & 3: 預繳紀錄 (income) 或 教材扣款 (expense) */}
+        {tab !== 'students' && (
           <div className="cfl-table-wrap">
-            {loading ? (
-              <div className="cfl-empty">載入中…</div>
-            ) : sortedList.length === 0 ? (
-              <div className="cfl-empty">{tab === 'income' ? '目前沒有收入紀錄' : '目前沒有支出紀錄'}</div>
+            {sortedList.length === 0 ? (
+              <div className="cfl-empty">目前尚無{tab === 'income' ? '預繳' : '扣款'}紀錄。</div>
             ) : (
-              sortedList.map((t) => (
-                <div className="cfl-row" key={t.id}>
-                  <div className="cfl-row-date cfl-mono">{t.date}</div>
-                  <div className="cfl-row-main">
-                    {t.type === 'income' ? (
-                      <>
-                        <div className="cfl-row-title">{t.source}</div>
-                        <div className="cfl-row-sub">
-                          {t.seat && <span className="cfl-mono">座號 {t.seat}</span>}
-                          {t.term && <span>{t.term}</span>}
-                          {t.note && <span>備註：{t.note}</span>}
+              sortedList.map((t) => {
+                const isIncome = t.type === 'income';
+                const student = t.seat ? roster.find(s => String(s.seat) === String(t.seat)) : null;
+                return (
+                  <div className="cfl-row" key={t.id}>
+                    <div className="cfl-row-date cfl-mono">{t.date}</div>
+                    <div className="cfl-row-main">
+                      <div className="cfl-row-title">
+                        {isIncome ? (
+                          <>
+                            {t.source}
+                            {t.seat && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary-mid)', background: 'var(--primary-light)', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>
+                                座號 {t.seat} {student ? `(${student.name})` : ''}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-light)', padding: '1px 6px', borderRadius: 4, marginRight: 6 }}>
+                              {t.category || '教材'}
+                            </span>
+                            {t.item}
+                            {t.seat && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--primary-mid)', background: 'var(--primary-light)', padding: '1px 6px', borderRadius: 4, marginLeft: 6 }}>
+                                座號 {t.seat} {student ? `(${student.name})` : ''}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      <div className="cfl-row-sub">
+                        {t.term && <span>{t.term}</span>}
+                        {t.note && <span> · {t.note}</span>}
+                      </div>
+                    </div>
+                    <div className={`cfl-row-amount cfl-mono ${isIncome ? 'income' : 'expense'}`}>
+                      {isIncome ? `+${money(t.amount)}` : `-${money(t.amount)}`}
+                    </div>
+                    {teacherMode && (
+                      confirmDelete === t.id ? (
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <button className="cfl-row-del-confirm" onClick={() => doDelete(t.id)}>確定</button>
+                          <button className="cfl-row-del" onClick={() => setConfirmDelete(null)}><X size={14} /></button>
                         </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="cfl-row-title">{t.item}</div>
-                        <div className="cfl-row-sub">
-                          <span>{t.category}</span>
-                          {teacherMode && t.seat && <span className="cfl-mono">座號 {t.seat}</span>}
-                          {t.term && <span>{t.term}</span>}
-                          <span>{t.payee ? `經手：${t.payee}` : `${t.unitPrice} × ${t.qty}`}</span>
-                          {t.note && <span>備註：{t.note}</span>}
-                        </div>
-                      </>
+                      ) : (
+                        <button className="cfl-row-del" onClick={() => setConfirmDelete(t.id)}><Trash2 size={15} /></button>
+                      )
                     )}
                   </div>
-                  <div className={`cfl-row-amount cfl-mono ${t.type}`}>{t.type === 'income' ? '+' : '−'}{money(t.amount)}</div>
-                  {teacherMode ? (
-                    confirmDelete === t.id ? (
-                      <div style={{ gridColumn: '1 / -1' }} className="cfl-confirm-box">
-                        <span>確定刪除此紀錄？</span>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="cfl-btn-primary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => doDelete(t.id)}>刪除</button>
-                          <button className="cfl-btn-ghost" style={{ padding: '4px 10px', fontSize: 11, background: '#fff' }} onClick={() => setConfirmDelete(null)}>取消</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button className="cfl-row-del" onClick={() => setConfirmDelete(t.id)}><Trash2 size={15} /></button>
-                    )
-                  ) : <div />}
-                </div>
-              ))
+                );
+              })
             )}
 
+            {/* 新增紀錄按鈕與表單 */}
             {teacherMode && (
               <div className="cfl-addbar">
                 {!showForm ? (
-                  <button className="cfl-add-btn" onClick={() => { setIncomeForm((f) => ({ ...f, term: f.term || settings.currentTerm || '' })); setExpenseForm((f) => ({ ...f, term: f.term || settings.currentTerm || '' })); setShowForm(true); }}><Plus size={16} />新增一筆{tab === 'income' ? '收入' : '支出'}</button>
+                  <button 
+                    className="cfl-add-btn" 
+                    onClick={() => {
+                      setIncomeForm((f) => ({ ...f, term: f.term || settings.currentTerm || '' }));
+                      setExpenseForm((f) => ({ ...f, term: f.term || settings.currentTerm || '' }));
+                      setShowForm(true);
+                    }}
+                  >
+                    <Plus size={16} />新增一筆{tab === 'income' ? '預繳 (儲值)' : '教材扣款'}
+                  </button>
                 ) : tab === 'income' ? (
-                  <form className="cfl-form" onSubmit={addIncome}>
-                    <div className="cfl-form-grid">
-                      <div className="cfl-field"><label>日期</label><input type="date" value={incomeForm.date} onChange={(e) => setIncomeForm({ ...incomeForm, date: e.target.value })} required /></div>
-                      <div className="cfl-field"><label>金額</label><input type="number" min="0" placeholder="例：3000" value={incomeForm.amount} onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })} required /></div>
-                      
-                      {/* 智慧座號選擇器 */}
-                      <div className="cfl-field">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label>
-                            學生座號（選填）
-                            {seatInputMode === 'manual' && incomeForm.seat && (
-                              (() => {
-                                const student = roster.find(s => String(s.seat) === String(incomeForm.seat));
-                                return student 
-                                  ? <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>({student.name})</span>
-                                  : <span style={{ color: 'var(--red)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>(查無此學生)</span>;
-                              })()
-                            )}
-                          </label>
-                          {roster.length > 0 && (
-                            <button 
-                              type="button" 
-                              onClick={() => { setSeatInputMode(seatInputMode === 'select' ? 'manual' : 'select'); }} 
-                              style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', padding: 0 }}
-                            >
-                              {seatInputMode === 'select' ? '手動輸入座號' : '從名冊選擇'}
-                            </button>
-                          )}
-                        </div>
-                        {roster.length > 0 && seatInputMode === 'select' ? (
-                          <select 
-                            value={incomeForm.seat} 
-                            onChange={handleRosterSeatSelect}
-                          >
-                            <option value="">（不指定學生）</option>
-                            {activeRosterSorted.map(s => (
-                              <option key={s.seat} value={s.seat}>
-                                {s.seat}號 — {s.name}
-                              </option>
-                            ))}
-                            <option value="__manual__">[手動輸入座號]</option>
-                          </select>
-                        ) : (
-                          <input 
-                            type="number" 
-                            min="1" 
-                            placeholder="例：5" 
-                            value={incomeForm.seat} 
-                            onChange={(e) => {
-                              const selectedSeat = e.target.value;
-                              const student = roster.find(s => String(s.seat) === String(selectedSeat));
-                              const termLabel = incomeForm.term || settings.currentTerm || '';
-                              const autoSource = student ? `${termLabel} 班費 - ${student.name}` : incomeForm.source;
-                              setIncomeForm({ 
-                                ...incomeForm, 
-                                seat: selectedSeat,
-                                source: (incomeForm.source && !incomeForm.source.includes('班費 - ')) ? incomeForm.source : autoSource
-                              });
-                            }} 
-                          />
-                        )}
-                      </div>
+                  /* 新增預繳表單 */
+                  <form className="cfl-form" onSubmit={handleAddIncome}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className={incomeMode === 'individual' ? 'cfl-btn-primary' : 'cfl-btn-ghost'}
+                        style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                        onClick={() => setIncomeMode('individual')}
+                      >
+                        個別學生預繳
+                      </button>
+                      <button
+                        type="button"
+                        className={incomeMode === 'batch' ? 'cfl-btn-primary' : 'cfl-btn-ghost'}
+                        style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                        onClick={() => setIncomeMode('batch')}
+                      >
+                        全班批次預繳登記
+                      </button>
+                    </div>
 
+                    <div className="cfl-form-grid">
+                      <div className="cfl-field">
+                        <label>預繳日期</label>
+                        <input type="date" value={incomeForm.date} onChange={(e) => setIncomeForm({ ...incomeForm, date: e.target.value })} required />
+                      </div>
                       <div className="cfl-field">
                         <label>學期</label>
                         <select value={incomeForm.term} onChange={(e) => setIncomeForm({ ...incomeForm, term: e.target.value })}>
@@ -1480,102 +1536,191 @@ export default function ClassFundLedger() {
                         </select>
                       </div>
 
-                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}><label>內容（收入來源）</label><input placeholder="例：113-1 班費" value={incomeForm.source} onChange={(e) => setIncomeForm({ ...incomeForm, source: e.target.value })} required /></div>
-                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}><label>備註（選填）</label><input placeholder="例：補繳" value={incomeForm.note} onChange={(e) => setIncomeForm({ ...incomeForm, note: e.target.value })} /></div>
+                      {incomeMode === 'individual' ? (
+                        <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                          <label>學生座號</label>
+                          <select 
+                            value={incomeForm.seat} 
+                            onChange={(e) => setIncomeForm({ ...incomeForm, seat: e.target.value })}
+                            required
+                          >
+                            <option value="">-- 請選擇學生 --</option>
+                            {activeRosterSorted.map(s => (
+                              <option key={s.seat} value={s.seat}>
+                                座號 {s.seat} — {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                          <div className="cfl-batch-selector">
+                            <div className="cfl-batch-header">
+                              <span>登記對象（已選 {batchSelectedSeats.length} / {roster.length} 人）</span>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" className="cfl-classname-edit-btn" onClick={selectAllBatchSeats}>全選</button>
+                                <button type="button" className="cfl-classname-edit-btn" onClick={clearBatchSeats}>清空</button>
+                              </div>
+                            </div>
+                            <div className="cfl-batch-chips">
+                              {activeRosterSorted.map(s => {
+                                const isSel = batchSelectedSeats.includes(String(s.seat));
+                                return (
+                                  <span
+                                    key={s.seat}
+                                    className={`cfl-batch-chip ${isSel ? 'selected' : ''}`}
+                                    onClick={() => toggleBatchSeat(String(s.seat))}
+                                  >
+                                    {s.seat} {s.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="cfl-field">
+                        <label>{incomeMode === 'batch' ? '每人預繳金額' : '預繳金額'}</label>
+                        <input type="number" min="1" placeholder="例：1000" value={incomeForm.amount} onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })} required />
+                      </div>
+                      <div className="cfl-field">
+                        <label>項目名稱（選填）</label>
+                        <input placeholder="例：114-1 期初教材預繳費" value={incomeForm.source} onChange={(e) => setIncomeForm({ ...incomeForm, source: e.target.value })} />
+                      </div>
+                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                        <label>備註（選填）</label>
+                        <input placeholder="例：現金繳交" value={incomeForm.note} onChange={(e) => setIncomeForm({ ...incomeForm, note: e.target.value })} />
+                      </div>
                     </div>
+
                     <div className="cfl-form-actions">
-                      <button type="submit" className="cfl-btn-primary">儲存</button>
+                      <button type="submit" className="cfl-btn-primary">
+                        {incomeMode === 'batch' ? `批次為 ${batchSelectedSeats.length} 位學生登記預繳` : '儲存'}
+                      </button>
                       <button type="button" className="cfl-btn-ghost" onClick={() => setShowForm(false)}>取消</button>
                     </div>
                   </form>
                 ) : (
-                  <form className="cfl-form" onSubmit={addExpense}>
+                  /* 新增扣款表單 */
+                  <form className="cfl-form" onSubmit={handleAddExpense}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className={expenseMode === 'batch' ? 'cfl-btn-primary' : 'cfl-btn-ghost'}
+                        style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                        onClick={() => setExpenseMode('batch')}
+                      >
+                        全班／多選批次扣款
+                      </button>
+                      <button
+                        type="button"
+                        className={expenseMode === 'individual' ? 'cfl-btn-primary' : 'cfl-btn-ghost'}
+                        style={{ flex: 1, padding: '6px 10px', fontSize: '12px' }}
+                        onClick={() => setExpenseMode('individual')}
+                      >
+                        個別學生加扣款
+                      </button>
+                    </div>
+
                     <div className="cfl-form-grid">
-                      <div className="cfl-field"><label>日期</label><input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} required /></div>
                       <div className="cfl-field">
-                        <label>支出類別</label>
+                        <label>扣款日期</label>
+                        <input type="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} required />
+                      </div>
+                      <div className="cfl-field">
+                        <label>教材類別</label>
                         <select value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}>
                           {EXPENSE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                         </select>
                       </div>
-                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}><label>支出項目</label><input placeholder="例：冷氣卡儲值" value={expenseForm.item} onChange={(e) => setExpenseForm({ ...expenseForm, item: e.target.value })} required /></div>
-                      <div className="cfl-field"><label>單價</label><input type="number" min="0" value={expenseForm.unitPrice} onChange={(e) => setExpenseForm({ ...expenseForm, unitPrice: e.target.value })} required /></div>
-                      <div className="cfl-field"><label>數量</label><input type="number" min="1" value={expenseForm.qty} onChange={(e) => setExpenseForm({ ...expenseForm, qty: e.target.value })} required /></div>
-                      <div className="cfl-field"><label>取款人（選填）</label><input placeholder="例：曾美蓮" value={expenseForm.payee} onChange={(e) => setExpenseForm({ ...expenseForm, payee: e.target.value })} /></div>
-                      <div className="cfl-field">
-                        <label>學期</label>
-                        <select value={expenseForm.term} onChange={(e) => setExpenseForm({ ...expenseForm, term: e.target.value })}>
-                          <option value="">（不指定）</option>
-                          {termsList.map((tm) => <option key={tm} value={tm}>{tm}</option>)}
-                        </select>
-                      </div>
-                      
-                      {/* 支出座號選擇器 */}
-                      <div className="cfl-field">
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <label>
-                            學生座號（選填）
-                            {seatInputMode === 'manual' && expenseForm.seat && (
-                              (() => {
-                                const student = roster.find(s => String(s.seat) === String(expenseForm.seat));
-                                return student 
-                                  ? <span style={{ color: 'var(--green)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>({student.name})</span>
-                                  : <span style={{ color: 'var(--red)', fontSize: 11, fontWeight: 600, marginLeft: 8 }}>(查無此學生)</span>;
-                              })()
-                            )}
-                          </label>
-                          {roster.length > 0 && (
-                            <button 
-                              type="button" 
-                              onClick={() => { setSeatInputMode(seatInputMode === 'select' ? 'manual' : 'select'); }} 
-                              style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', padding: 0 }}
-                            >
-                              {seatInputMode === 'select' ? '手動輸入座號' : '從名冊選擇'}
-                            </button>
-                          )}
-                        </div>
-                        {roster.length > 0 && seatInputMode === 'select' ? (
-                          <select 
-                            value={expenseForm.seat} 
-                            onChange={(e) => {
-                              const selectedSeat = e.target.value;
-                              if (selectedSeat === '__manual__') {
-                                setSeatInputMode('manual');
-                                setExpenseForm({ ...expenseForm, seat: '' });
-                              } else {
-                                setExpenseForm({ ...expenseForm, seat: selectedSeat });
-                              }
-                            }}
-                          >
-                            <option value="">（不指定學生）</option>
-                            {activeRosterSorted.map(s => (
-                              <option key={s.seat} value={s.seat}>
-                                {s.seat}號 — {s.name}
-                              </option>
-                            ))}
-                            <option value="__manual__">[手動輸入座號]</option>
-                          </select>
-                        ) : (
-                          <input 
-                            type="number" 
-                            min="1" 
-                            placeholder="例：5" 
-                            value={expenseForm.seat} 
-                            onChange={(e) => setExpenseForm({ ...expenseForm, seat: e.target.value })} 
-                          />
-                        )}
+
+                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                        <label>教材／品項名稱</label>
+                        <input placeholder="例：數學隨堂測驗卷、自然材料包" value={expenseForm.item} onChange={(e) => setExpenseForm({ ...expenseForm, item: e.target.value })} required />
                       </div>
 
-                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}><label>備註（選填）</label><input placeholder="例：分兩批購買" value={expenseForm.note} onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })} /></div>
+                      {expenseMode === 'batch' ? (
+                        <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                          <div className="cfl-batch-selector">
+                            <div className="cfl-batch-header">
+                              <span>扣款對象（已選 {batchSelectedSeats.length} / {roster.length} 人）</span>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button type="button" className="cfl-classname-edit-btn" onClick={selectAllBatchSeats}>全選</button>
+                                <button type="button" className="cfl-classname-edit-btn" onClick={clearBatchSeats}>清空</button>
+                              </div>
+                            </div>
+                            <div className="cfl-batch-chips">
+                              {activeRosterSorted.map(s => {
+                                const isSel = batchSelectedSeats.includes(String(s.seat));
+                                return (
+                                  <span
+                                    key={s.seat}
+                                    className={`cfl-batch-chip ${isSel ? 'selected' : ''}`}
+                                    onClick={() => toggleBatchSeat(String(s.seat))}
+                                  >
+                                    {s.seat} {s.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                          <label>指定扣款學生座號</label>
+                          <select 
+                            value={expenseForm.seat} 
+                            onChange={(e) => setExpenseForm({ ...expenseForm, seat: e.target.value })}
+                            required
+                          >
+                            <option value="">-- 請選擇學生 --</option>
+                            {activeRosterSorted.map(s => (
+                              <option key={s.seat} value={s.seat}>
+                                座號 {s.seat} — {s.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="cfl-field">
+                        <label>{expenseMode === 'batch' ? '每人扣款金額' : '單價'}</label>
+                        <input type="number" min="0" value={expenseForm.unitPrice} onChange={(e) => setExpenseForm({ ...expenseForm, unitPrice: e.target.value })} required />
+                      </div>
+
+                      {expenseMode === 'individual' ? (
+                        <div className="cfl-field">
+                          <label>數量</label>
+                          <input type="number" min="1" value={expenseForm.qty} onChange={(e) => setExpenseForm({ ...expenseForm, qty: e.target.value })} required />
+                        </div>
+                      ) : (
+                        <div className="cfl-field">
+                          <label>學期</label>
+                          <select value={expenseForm.term} onChange={(e) => setExpenseForm({ ...expenseForm, term: e.target.value })}>
+                            <option value="">（不指定）</option>
+                            {termsList.map((tm) => <option key={tm} value={tm}>{tm}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="cfl-field" style={{ gridColumn: '1 / -1' }}>
+                        <label>備註（選填）</label>
+                        <input placeholder="例：全班統一訂購" value={expenseForm.note} onChange={(e) => setExpenseForm({ ...expenseForm, note: e.target.value })} />
+                      </div>
                     </div>
                     
-                    {/* 金額即時小計顯示 */}
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-soft)', background: 'var(--primary-light)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', marginBottom: 12 }}>
-                      小計金額：NT$ {money((Number(expenseForm.unitPrice) || 0) * (Number(expenseForm.qty) || 1))}
+                      {expenseMode === 'batch' 
+                        ? `總計扣款：${batchSelectedSeats.length} 人 × NT$ ${money(expenseForm.unitPrice)} = NT$ ${money(batchSelectedSeats.length * (Number(expenseForm.unitPrice) || 0))}`
+                        : `小計金額：NT$ ${money((Number(expenseForm.unitPrice) || 0) * (Number(expenseForm.qty) || 1))}`
+                      }
                     </div>
                     
                     <div className="cfl-form-actions">
-                      <button type="submit" className="cfl-btn-primary">儲存</button>
+                      <button type="submit" className="cfl-btn-primary">
+                        {expenseMode === 'batch' ? `執行批次扣款 (${batchSelectedSeats.length} 人)` : '儲存扣款'}
+                      </button>
                       <button type="button" className="cfl-btn-ghost" onClick={() => setShowForm(false)}>取消</button>
                     </div>
                   </form>
@@ -1587,7 +1732,6 @@ export default function ClassFundLedger() {
 
         {/* 統合分析區塊：圈餅圖 + 趨勢折線圖 */}
         {(categoryBreakdown.length > 0 || balanceTrend.length > 1) && (() => {
-          // --- 圈餅圖資料 ---
           const PIE_COLORS = ['#1e4232','#c8860e','#2a6e30','#b26a00','#1976d2','#7b1fa2'];
           const total = categoryBreakdown.reduce((s, c) => s + c.amount, 0);
           const CX = 90, CY = 90, R = 72, IR = 44;
@@ -1606,7 +1750,6 @@ export default function ClassFundLedger() {
             return { ...c, d, color: PIE_COLORS[i % PIE_COLORS.length], pct: Math.round(frac * 100) };
           });
 
-          // --- 趨勢圖資料 ---
           const balances = balanceTrend.map(p => p.balance);
           const maxBal = Math.max(...balances, 1000);
           const minBal = Math.min(...balances, 0);
@@ -1620,18 +1763,17 @@ export default function ClassFundLedger() {
 
           return (
             <div className="cfl-analysis-card">
-              <div className="cfl-analysis-title">班費分析總覽</div>
+              <div className="cfl-analysis-title">教材費分析總覽</div>
 
-              {/* 圈餅圖：支出類別 */}
               {categoryBreakdown.length > 0 && (
                 <div className="cfl-analysis-section">
-                  <div className="cfl-analysis-section-label">支出類別分布</div>
+                  <div className="cfl-analysis-section-label">教材類別分布</div>
                   <div className="cfl-pie-layout">
                     <svg viewBox="0 0 180 180" className="cfl-pie-svg">
                       {slices.map((s, i) => (
                         <path key={i} d={s.d} fill={s.color} stroke="#fff" strokeWidth="2" />
                       ))}
-                      <text x={CX} y={CY - 6} textAnchor="middle" style={{ fontSize: '11px', fill: 'var(--text-soft)', fontWeight: 600 }}>總支出</text>
+                      <text x={CX} y={CY - 6} textAnchor="middle" style={{ fontSize: '11px', fill: 'var(--text-soft)', fontWeight: 600 }}>總教材支出</text>
                       <text x={CX} y={CY + 11} textAnchor="middle" style={{ fontSize: '13px', fill: 'var(--text)', fontWeight: 800 }}>${money(total)}</text>
                     </svg>
                     <div className="cfl-pie-legend">
@@ -1648,10 +1790,9 @@ export default function ClassFundLedger() {
                 </div>
               )}
 
-              {/* 趨勢折線圖：結餘變化 */}
               {balanceTrend.length > 1 && (
                 <div className="cfl-analysis-section" style={{ borderTop: categoryBreakdown.length > 0 ? '1px solid var(--border)' : 'none', paddingTop: categoryBreakdown.length > 0 ? 18 : 0 }}>
-                  <div className="cfl-analysis-section-label">結餘變化趨勢</div>
+                  <div className="cfl-analysis-section-label">專戶結餘變化趨勢</div>
                   <div style={{ overflowX: 'auto' }}>
                     <svg viewBox="0 0 500 180" width="100%" style={{ minWidth: '380px', display: 'block' }}>
                       <defs>
@@ -1661,12 +1802,6 @@ export default function ClassFundLedger() {
                         </linearGradient>
                       </defs>
                       <line x1="40" y1="155" x2="460" y2="155" stroke="rgba(0,0,0,0.08)" strokeWidth="1.5" />
-                      {maxBal > 1000 && thresholdY >= 25 && thresholdY <= 155 && (
-                        <g>
-                          <line x1="40" y1={thresholdY} x2="460" y2={thresholdY} stroke="rgba(184,50,50,0.35)" strokeDasharray="4 3" strokeWidth="1.2" />
-                          <text x="42" y={thresholdY - 4} fill="var(--red)" style={{ fontSize: '9px', fontWeight: 700 }}>警戒 $1,000</text>
-                        </g>
-                      )}
                       <path
                         d={`M 40,155 ${trendPts.map(p => `L ${p.x},${p.y}`).join(' ')} L 460,155 Z`}
                         fill="url(#trendGrad2)"
@@ -1691,18 +1826,76 @@ export default function ClassFundLedger() {
                       })}
                     </svg>
                   </div>
-                  {totals.balance < 1000 && (
-                    <div className="cfl-warning-box">
-                      <AlertCircle size={14} />
-                      <span>目前班費餘額（${money(totals.balance)}）已低於安全警戒線，請準備籌措下一期班費！</span>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           );
         })()}
       </div>
+
+      {/* 學生個別存摺明細檢視 Modal */}
+      {selectedStudentForModal && (
+        <div className="cfl-overlay" onClick={() => setSelectedStudentForModal(null)}>
+          <div className="cfl-modal" style={{ maxWidth: '600px', width: '95%' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+              <div>
+                <span className="cfl-student-seat">座號 {selectedStudentForModal.seat}</span>
+                <div className="cfl-modal-title" style={{ marginTop: 4 }}>{selectedStudentForModal.name} 同學的教材費存摺</div>
+              </div>
+              <button className="cfl-row-del" onClick={() => setSelectedStudentForModal(null)}><X size={18} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, background: 'var(--bg)', padding: 12, borderRadius: 'var(--radius-sm)', margin: '14px 0' }}>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>累計預繳</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--green)' }}>+{money(selectedStudentForModal.income)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>教材扣款</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--red)' }}>-{money(selectedStudentForModal.expense)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>專戶結餘</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: selectedStudentForModal.balance >= 0 ? 'var(--text)' : 'var(--red)' }}>
+                  ${money(selectedStudentForModal.balance)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ maxHeight: '320px', overflowY: 'auto' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary-dark)', marginBottom: 8 }}>教材扣款明細清單 ({selectedStudentForModal.expenses.length} 筆)</div>
+              {selectedStudentForModal.expenses.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-soft)', fontSize: 13 }}>尚無教材扣款紀錄</div>
+              ) : (
+                selectedStudentForModal.expenses.map(exp => (
+                  <div key={exp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#fff', border: '1px solid var(--border)', borderRadius: 6, marginBottom: 6 }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>
+                        <span style={{ fontSize: 10, color: 'var(--accent)', background: 'var(--accent-light)', padding: '1px 4px', borderRadius: 3, marginRight: 4 }}>{exp.category}</span>
+                        {exp.item}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-soft)' }}>{exp.date} {exp.term ? `· ${exp.term}` : ''} {exp.note ? `· ${exp.note}` : ''}</div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)' }}>-{money(exp.amount)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="cfl-modal-actions" style={{ marginTop: 14 }}>
+              <button 
+                type="button" 
+                className="cfl-btn-ghost" 
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                onClick={() => window.print()}
+              >
+                <Printer size={15} /> 列印此存摺
+              </button>
+              <button type="button" className="cfl-btn-primary" onClick={() => setSelectedStudentForModal(null)}>關閉</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 密碼解鎖/設定 Modal */}
       {modal && (
@@ -1711,7 +1904,7 @@ export default function ClassFundLedger() {
             {modal === 'setup' ? (
               <>
                 <div className="cfl-modal-title">設定教師密碼</div>
-                <div className="cfl-modal-sub">第一次使用，請設定 4 碼以上密碼。這只是防止家長或學生誤觸修改，並非嚴格的帳號安全機制，請自行妥善保管。</div>
+                <div className="cfl-modal-sub">第一次使用，請設定 4 碼以上密碼，防止誤觸修改。</div>
                 <input type="password" inputMode="numeric" placeholder="輸入密碼" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
                 <input type="password" inputMode="numeric" placeholder="再輸入一次" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value)} />
                 {pinError && <div className="cfl-modal-err">{pinError}</div>}
@@ -1723,7 +1916,7 @@ export default function ClassFundLedger() {
             ) : (
               <>
                 <div className="cfl-modal-title">輸入教師密碼</div>
-                <div className="cfl-modal-sub">解鎖後即可新增、編輯或刪除紀錄。</div>
+                <div className="cfl-modal-sub">解鎖後即可登記預繳、進行教材扣款與管理學生名冊。</div>
                 <input type="password" inputMode="numeric" placeholder="密碼" value={pinInput} onChange={(e) => setPinInput(e.target.value)} autoFocus />
                 {pinError && <div className="cfl-modal-err">{pinError}</div>}
                 <div className="cfl-modal-actions">
@@ -1748,10 +1941,7 @@ export default function ClassFundLedger() {
               偵測到雲端試算表與本地瀏覽器的資料不一致。請對照下方兩側的版本數據，並選擇您要採用的版本：
             </div>
             
-            {/* 左右對比面板 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, margin: '16px 0' }}>
-              
-              {/* 左側：本地端變更 */}
               <div style={{ 
                 border: '1.5px solid var(--border)', 
                 borderRadius: 'var(--radius)', 
@@ -1762,7 +1952,7 @@ export default function ClassFundLedger() {
                 justifyContent: 'space-between'
               }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12 }}>
                     <span>💻 本地本機版本</span>
                   </div>
                   <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8, color: 'var(--text-soft)', marginBottom: 20 }}>
@@ -1778,10 +1968,6 @@ export default function ClassFundLedger() {
                       <span>班級名稱：</span>
                       <strong style={{ color: 'var(--text)' }}>{settings.className || '未設定'}</strong>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>目前學期：</span>
-                      <strong style={{ color: 'var(--text)' }}>{settings.currentTerm || '未設定'}</strong>
-                    </div>
                   </div>
                 </div>
                 
@@ -1789,15 +1975,12 @@ export default function ClassFundLedger() {
                   type="button"
                   className="cfl-btn-primary" 
                   style={{ width: '100%', padding: '10px', background: 'var(--accent)', borderColor: 'var(--accent)' }}
-                  onClick={() => {
-                    pushLocalToCloud(settings.sheetUrl, transactions, roster, settings);
-                  }}
+                  onClick={() => pushLocalToCloud(settings.sheetUrl, transactions, roster, settings)}
                 >
                   ▲ 用本地覆蓋雲端
                 </button>
               </div>
 
-              {/* 右側：雲端備份 */}
               <div style={{ 
                 border: '1.5px solid var(--primary-mid)', 
                 borderRadius: 'var(--radius)', 
@@ -1808,7 +1991,7 @@ export default function ClassFundLedger() {
                 justifyContent: 'space-between'
               }}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--primary-dark)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--primary-dark)', borderBottom: '1px solid var(--border)', paddingBottom: 8, marginBottom: 12 }}>
                     <span>☁️ 雲端備份版本</span>
                   </div>
                   <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8, color: 'var(--text-soft)', marginBottom: 20 }}>
@@ -1823,10 +2006,6 @@ export default function ClassFundLedger() {
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>班級名稱：</span>
                       <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.settings.className || '未設定'}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>目前學期：</span>
-                      <strong style={{ color: 'var(--text)' }}>{cloudDataTemp.settings.currentTerm || '未設定'}</strong>
                     </div>
                   </div>
                 </div>
@@ -1846,7 +2025,6 @@ export default function ClassFundLedger() {
                   ▼ 下載雲端覆蓋本地
                 </button>
               </div>
-
             </div>
 
             <div className="cfl-modal-actions" style={{ marginTop: 12 }}>

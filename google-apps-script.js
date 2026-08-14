@@ -41,10 +41,15 @@ function doGet(e) {
       var authResult = parentAuth(ss, seat, pin, termParam);
       // 對家長端的傳回內容中的備註與項目名稱進行去識別化過濾，確保不洩露其他同學姓名
       if (authResult.success && authResult.data) {
-        if (authResult.data.classLedger) {
-          authResult.data.classLedger.forEach(function(t) {
+        if (authResult.data.expenses) {
+          authResult.data.expenses.forEach(function(t) {
             if (t.note) t.note = maskNamesInText(t.note, rawRoster);
             if (t.item) t.item = maskNamesInText(t.item, rawRoster);
+          });
+        }
+        if (authResult.data.incomes) {
+          authResult.data.incomes.forEach(function(t) {
+            if (t.note) t.note = maskNamesInText(t.note, rawRoster);
           });
         }
       }
@@ -532,14 +537,43 @@ function parentAuth(ss, seat, pin, termParam) {
   var duesConfig = settings.duesConfig || {};
   var amountDue = Number(duesConfig[term]) || 0;
 
-  // 加總該座號、該學期的所有 income 交易
+  // 加總該座號、該學期的所有 income 交易（個人預繳/儲值）
+  var studentIncomes = [];
   var amountPaid = 0;
   for (var m = 0; m < transactions.length; m++) {
     var t = transactions[m];
-    if (t.type === "income" && String(t.seat) === seat && t.term === term) {
+    if (t.type === "income" && String(t.seat) === seat && (!term || t.term === term)) {
       amountPaid += Number(t.amount) || 0;
+      studentIncomes.push({
+        id: t.id,
+        date: t.date,
+        amount: Number(t.amount) || 0,
+        term: t.term,
+        note: t.note || ""
+      });
     }
   }
+
+  // 加總該座號、該學期的所有 expense 交易（個人教材扣款）
+  var studentExpenses = [];
+  var amountSpent = 0;
+  for (var n = 0; n < transactions.length; n++) {
+    var exp = transactions[n];
+    if (exp.type === "expense" && String(exp.seat) === seat && (!term || exp.term === term)) {
+      amountSpent += Number(exp.amount) || 0;
+      studentExpenses.push({
+        id: exp.id,
+        date: exp.date,
+        category: exp.category || "教材費",
+        item: exp.item || "",
+        amount: Number(exp.amount) || 0,
+        term: exp.term,
+        note: exp.note || ""
+      });
+    }
+  }
+
+  var studentBalance = amountPaid - amountSpent;
 
   var status = "unpaid";
   if (amountDue > 0) {
@@ -549,38 +583,6 @@ function parentAuth(ss, seat, pin, termParam) {
     status = "paid"; // 尚未設定金額但已有繳費紀錄，視為已繳
   }
 
-  // 去識別化班費收支明細：移除 seat、source（收入來源常含座號樣板文字）、payee
-  var classLedger = transactions.map(function(t) {
-    if (t.type === "income") {
-      return { id: t.id, type: t.type, date: t.date, amount: t.amount, term: t.term, note: t.note };
-    }
-    return { id: t.id, type: t.type, date: t.date, category: t.category, item: t.item, amount: t.amount, term: t.term, note: t.note };
-  });
-
-  var classBalance = 0;
-  for (var n = 0; n < transactions.length; n++) {
-    classBalance += transactions[n].type === "income" ? (Number(transactions[n].amount) || 0) : -(Number(transactions[n].amount) || 0);
-  }
-
-  // 統計全班繳費狀況 (去識別化統計)
-  var totalStudents = roster.length;
-  var paidCount = 0;
-  for (var x = 0; x < roster.length; x++) {
-    var rSeat = String(roster[x].seat);
-    var rPaid = 0;
-    for (var y = 0; y < transactions.length; y++) {
-      var t = transactions[y];
-      if (t.type === "income" && String(t.seat) === rSeat && t.term === term) {
-        rPaid += Number(t.amount) || 0;
-      }
-    }
-    if (amountDue > 0) {
-      if (rPaid >= amountDue) paidCount++;
-    } else {
-      if (rPaid > 0) paidCount++;
-    }
-  }
-
   return {
     success: true,
     isNewSetup: isNewSetup,
@@ -588,11 +590,19 @@ function parentAuth(ss, seat, pin, termParam) {
       myChild: {
         seat: seat,
         name: studentEntry.name,
-        payment: { seat: seat, term: term, amountDue: amountDue, amountPaid: amountPaid, status: status }
+        payment: {
+          seat: seat,
+          term: term,
+          amountDue: amountDue,
+          amountPaid: amountPaid,
+          amountSpent: amountSpent,
+          balance: studentBalance,
+          status: status
+        }
       },
-      classLedger: classLedger,
-      classBalance: classBalance,
-      classPaymentStats: { total: totalStudents, paid: paidCount }
+      incomes: studentIncomes,
+      expenses: studentExpenses,
+      balance: studentBalance
     }
   };
 }
