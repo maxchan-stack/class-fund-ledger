@@ -28,6 +28,15 @@ function doGet(e) {
     var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
     var rawRoster = readSheetData(rosterSheet);
     
+    if (action === "teacherAuth") {
+      var isTeacherAuth = checkTeacherAuth(ss, auth);
+      return ContentService.createTextOutput(JSON.stringify({
+        success: isTeacherAuth,
+        isTeacher: isTeacherAuth,
+        error: isTeacherAuth ? null : "密碼錯誤"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === "parentAuth") {
       var seat = e && e.parameter && e.parameter.seat ? String(e.parameter.seat) : "";
       var pin = e && e.parameter && e.parameter.pin ? String(e.parameter.pin) : "";
@@ -197,6 +206,16 @@ function doPost(e) {
     var postData = JSON.parse(e.postData.contents);
     var action = postData.action;
     
+    if (action === "teacherAuth") {
+      var auth = (postData.auth !== undefined && postData.auth !== null) ? String(postData.auth) : "";
+      var isTeacherAuth = checkTeacherAuth(ss, auth);
+      return ContentService.createTextOutput(JSON.stringify({
+        success: isTeacherAuth,
+        isTeacher: isTeacherAuth,
+        error: isTeacherAuth ? null : "密碼錯誤"
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === "sync" || action === "push") {
       var auth = (postData.auth !== undefined && postData.auth !== null) ? String(postData.auth) : "";
       if (!checkTeacherAuth(ss, auth)) {

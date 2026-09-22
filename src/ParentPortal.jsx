@@ -23,7 +23,13 @@ function resolveSheetUrlFromLocation() {
   const apiId = params.get('api') || params.get('id');
   const urlParam = params.get('url');
   if (urlParam) return urlParam;
-  if (apiId) return `https://script.google.com/macros/s/${apiId}/exec`;
+  if (apiId) {
+    if (apiId.startsWith('http://') || apiId.startsWith('https://')) {
+      const match = apiId.match(/macros\/s\/([^/]+)\/exec/);
+      return match ? `https://script.google.com/macros/s/${match[1]}/exec` : apiId;
+    }
+    return `https://script.google.com/macros/s/${apiId}/exec`;
+  }
   return '';
 }
 

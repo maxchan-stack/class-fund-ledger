@@ -267,9 +267,9 @@ export default function App() {
 
   const [modal, setModal] = useState(null); // 'setup' | 'unlock' | null
   const [pinInput, setPinInput] = useState('');
-  const [pinConfirm, setPinConfirm] = useState('');
   const [pinError, setPinError] = useState('');
   const [stamping, setStamping] = useState(false);
+  const [authenticating, setAuthenticating] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -338,7 +338,12 @@ export default function App() {
     if (urlParam) {
       querySheetUrl = urlParam;
     } else if (apiId) {
-      querySheetUrl = `https://script.google.com/macros/s/${apiId}/exec`;
+      if (apiId.startsWith('http://') || apiId.startsWith('https://')) {
+        const match = apiId.match(/macros\/s\/([^/]+)\/exec/);
+        querySheetUrl = match ? `https://script.google.com/macros/s/${match[1]}/exec` : apiId;
+      } else {
+        querySheetUrl = `https://script.google.com/macros/s/${apiId}/exec`;
+      }
     }
 
     try {
@@ -442,6 +447,12 @@ export default function App() {
         return;
       }
 
+      if (result.anonymized && localSettings.pin) {
+        setTeacherMode(false);
+        setDeviceRole('viewer');
+        StorageService.set('device-role', 'viewer', false);
+      }
+
       const cloudData = result.data;
       const isTransEqual = areTransactionsEqual(localTrans, cloudData.transactions);
       const isRosterEqual = areRostersEqual(localRoster, cloudData.roster);
@@ -493,9 +504,13 @@ export default function App() {
     }
 
     if (cloudSettings) {
-      setSettings(cloudSettings);
+      const preservedPin = (cloudSettings.pin && cloudSettings.pin !== 'HIDDEN')
+        ? cloudSettings.pin
+        : (settings.pin || '');
+      const nextSettings = { ...cloudSettings, pin: preservedPin };
+      setSettings(nextSettings);
       setClassNameInput(cloudSettings.className || '214 班');
-      await StorageService.set('settings', JSON.stringify(cloudSettings), true);
+      await StorageService.set('settings', JSON.stringify(nextSettings), true);
     }
   };
 
@@ -584,6 +599,9 @@ export default function App() {
 
   const forgetDevice = async () => {
     await StorageService.delete('device-role', false);
+    const clearedSettings = { ...settings, pin: '' };
+    setSettings(clearedSettings);
+    await StorageService.set('settings', JSON.stringify(clearedSettings), true);
     setDeviceRole('viewer');
     setTeacherMode(false);
     setShowForm(false);
@@ -713,25 +731,66 @@ export default function App() {
     setPinInput('');
     setPinConfirm('');
     setPinError('');
-    setModal(settings.pin ? 'unlock' : 'setup');
+    setModal('unlock');
   }
 
-  async function submitSetup() {
-    if (pinInput.length < 4) { setPinError('密碼至少 4 碼'); return; }
-    if (pinInput !== pinConfirm) { setPinError('兩次輸入不一致'); return; }
-    await saveSettings({ ...settings, pin: pinInput });
-    doStamp();
+  async function submitUnlock() {
+    const input = pinInput.trim();
+    if (!input) {
+      setPinError('請輸入 4 位數以上密碼');
+      return;
+    }
+    setAuthenticating(true);
+    setPinError('');
+
+    if (!settings.sheetUrl) {
+      if (settings.pin && input !== settings.pin) {
+        setPinError('密碼錯誤');
+        setAuthenticating(false);
+        return;
+      }
+      await doStamp(input);
+      setAuthenticating(false);
+      return;
+    }
+
+    try {
+      const queryParams = new URLSearchParams();
+      if (settings.spreadsheetUrl) queryParams.set('url', settings.spreadsheetUrl);
+      queryParams.set('auth', input);
+      queryParams.set('action', 'teacherAuth');
+
+      const res = await fetch(`${settings.sheetUrl}?${queryParams.toString()}`, {
+        method: 'GET',
+        mode: 'cors'
+      });
+      const data = await res.json();
+
+      const isAuthed = data.isTeacher === true || (data.success && !data.anonymized);
+      if (isAuthed) {
+        await doStamp(input);
+        if (data.data) {
+          await applyCloudData(data.data.transactions, data.data.roster, { ...data.data.settings, pin: input });
+          setSyncStatus('synced');
+        }
+      } else {
+        setPinError('密碼錯誤，請確認 Google 試算表設定之教師 PIN 碼');
+      }
+    } catch (err) {
+      console.error('線上鑑權連線錯誤：', err);
+      setPinError('連線失敗，請檢查網路或試算表網址設定');
+    } finally {
+      setAuthenticating(false);
+    }
   }
 
-  function submitUnlock() {
-    if (String(pinInput) !== String(settings.pin || '')) { setPinError('密碼錯誤'); return; }
-    doStamp();
-  }
-
-  async function doStamp() {
+  async function doStamp(validPin) {
     setStamping(true);
     setModal(null);
+    const updatedSettings = { ...settings, pin: validPin || settings.pin || '' };
+    setSettings(updatedSettings);
     try { 
+      await StorageService.set('settings', JSON.stringify(updatedSettings), true);
       await StorageService.set('device-role', 'teacher', false); 
     } catch { 
       /* ignore */ 
@@ -883,8 +942,16 @@ export default function App() {
   }
 
   async function saveBackupUrl() {
-    const formattedUrl = sheetUrlInput.trim();
+    let formattedUrl = sheetUrlInput.trim();
     const formattedSpreadsheetUrl = spreadsheetUrlInput.trim();
+    if (formattedUrl) {
+      if (formattedUrl.startsWith('http://') || formattedUrl.startsWith('https://')) {
+        const match = formattedUrl.match(/macros\/s\/([^/]+)\/exec/);
+        if (match) formattedUrl = `https://script.google.com/macros/s/${match[1]}/exec`;
+      } else {
+        formattedUrl = `https://script.google.com/macros/s/${formattedUrl}/exec`;
+      }
+    }
     const nextSettings = { ...settings, sheetUrl: formattedUrl, spreadsheetUrl: formattedSpreadsheetUrl };
     await saveSettings(nextSettings);
     setEditingBackup(false);
@@ -895,7 +962,7 @@ export default function App() {
 
   const copyParentShareUrl = () => {
     if (!settings.sheetUrl) return;
-    const match = settings.sheetUrl.match(/macros\/s\/([^\/]+)\/exec/);
+    const match = settings.sheetUrl.match(/macros\/s\/([^/]+)\/exec/);
     const apiId = match ? match[1] : '';
     if (!apiId) return;
     const shareUrl = `${window.location.origin}${window.location.pathname}?view=parent&api=${apiId}`;
@@ -1897,34 +1964,32 @@ export default function App() {
         </div>
       )}
 
-      {/* 密碼解鎖/設定 Modal */}
+      {/* 密碼解鎖 Modal */}
       {modal && (
-        <div className="cfl-overlay" onClick={() => setModal(null)}>
+        <div className="cfl-overlay" onClick={() => !authenticating && setModal(null)}>
           <div className="cfl-modal" onClick={(e) => e.stopPropagation()}>
-            {modal === 'setup' ? (
-              <>
-                <div className="cfl-modal-title">設定教師密碼</div>
-                <div className="cfl-modal-sub">第一次使用，請設定 4 碼以上密碼，防止誤觸修改。</div>
-                <input type="password" inputMode="numeric" placeholder="輸入密碼" value={pinInput} onChange={(e) => setPinInput(e.target.value)} />
-                <input type="password" inputMode="numeric" placeholder="再輸入一次" value={pinConfirm} onChange={(e) => setPinConfirm(e.target.value)} />
-                {pinError && <div className="cfl-modal-err">{pinError}</div>}
-                <div className="cfl-modal-actions">
-                  <button className="cfl-btn-primary" style={{ flex: 1 }} onClick={submitSetup}>設定並解鎖</button>
-                  <button className="cfl-btn-ghost" onClick={() => setModal(null)}>取消</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="cfl-modal-title">輸入教師密碼</div>
-                <div className="cfl-modal-sub">解鎖後即可登記預繳、進行教材扣款與管理學生名冊。</div>
-                <input type="password" inputMode="numeric" placeholder="密碼" value={pinInput} onChange={(e) => setPinInput(e.target.value)} autoFocus />
-                {pinError && <div className="cfl-modal-err">{pinError}</div>}
-                <div className="cfl-modal-actions">
-                  <button className="cfl-btn-primary" style={{ flex: 1 }} onClick={submitUnlock}>解鎖</button>
-                  <button className="cfl-btn-ghost" onClick={() => setModal(null)}>取消</button>
-                </div>
-              </>
-            )}
+            <div className="cfl-modal-title">輸入教師密碼</div>
+            <div className="cfl-modal-sub">解鎖後即可登記預繳、進行教材扣款與管理學生名冊。密碼由雲端試算表統一鑑權。</div>
+            <form onSubmit={(e) => { e.preventDefault(); submitUnlock(); }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                placeholder="請輸入 4 位數 PIN 碼"
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+                autoFocus
+                disabled={authenticating}
+              />
+              {pinError && <div className="cfl-modal-err">{pinError}</div>}
+              <div className="cfl-modal-actions">
+                <button type="submit" className="cfl-btn-primary" style={{ flex: 1 }} disabled={authenticating}>
+                  {authenticating ? '線上驗證中...' : '驗證解鎖'}
+                </button>
+                <button type="button" className="cfl-btn-ghost" onClick={() => setModal(null)} disabled={authenticating}>
+                  取消
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
