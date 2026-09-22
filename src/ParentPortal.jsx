@@ -44,7 +44,7 @@ export default function ParentPortal() {
 
   useEffect(() => {
     (async () => {
-      const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwBoo653bMsvkZceaXks8x2Ul2GuFJWI5ctXQMkh3vq_YLolAerNJWIv9gRyEnOmvN_Bw/exec';
+      const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbyttGtb7zSbR8_Z7eErIHBcA3OBmk8ylghKzOybZ0TUD5zT3O_LuTtUpXNjzAEylj3Xvg/exec';
       const fromUrl = resolveSheetUrlFromLocation();
       if (fromUrl) {
         setSheetUrl(fromUrl);

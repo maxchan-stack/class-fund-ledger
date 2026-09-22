@@ -316,7 +316,7 @@ export default function App() {
 
   async function loadAll() {
     setLoading(true);
-    const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbwBoo653bMsvkZceaXks8x2Ul2GuFJWI5ctXQMkh3vq_YLolAerNJWIv9gRyEnOmvN_Bw/exec';
+    const DEFAULT_SHEET_URL = 'https://script.google.com/macros/s/AKfycbyttGtb7zSbR8_Z7eErIHBcA3OBmk8ylghKzOybZ0TUD5zT3O_LuTtUpXNjzAEylj3Xvg/exec';
     const DEFAULT_SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/18CZv9TNJHrUBiAGPUTti2pNuDEMMXwniXU9aBs_lsyQ/edit';
 
     let loadedSettings = { 
@@ -353,7 +353,7 @@ export default function App() {
         loadedSettings = {
           ...loadedSettings,
           ...parsed,
-          sheetUrl: parsed.sheetUrl || DEFAULT_SHEET_URL,
+          sheetUrl: (parsed.sheetUrl && parsed.sheetUrl.includes('AKfycbwBoo653bMsvkZceaXks8x2Ul2GuFJWI5ctXQMkh3vq_YLolAerNJWIv9gRyEnOmvN_Bw')) ? DEFAULT_SHEET_URL : (parsed.sheetUrl || DEFAULT_SHEET_URL),
           spreadsheetUrl: parsed.spreadsheetUrl || DEFAULT_SPREADSHEET_URL,
           className: parsed.className || '214 班'
         };
@@ -729,7 +729,6 @@ export default function App() {
       return;
     }
     setPinInput('');
-    setPinConfirm('');
     setPinError('');
     setModal('unlock');
   }
@@ -1106,7 +1105,7 @@ export default function App() {
     <div className="cfl-root">
       <header>
         <div className="header-inner">
-          <div className="brand" onClick={deviceRole !== 'teacher' ? handleSecretTap : undefined}>
+          <div className="brand">
             教材費紀錄系統
             <small>學生專戶專款專用管理 · {settings.className || '214 班'}</small>
             {settings.sheetUrl && (
@@ -1172,7 +1171,7 @@ export default function App() {
                   <button className="cfl-classname-edit-btn" onClick={saveClassName}>儲存</button>
                 </div>
               ) : (
-                <div className="cfl-classname" onClick={deviceRole !== 'teacher' ? handleSecretTap : undefined}>
+                <div className="cfl-classname">
                   <span>{settings.className || '點此設定班級名稱'}</span>
                   {teacherMode && (
                     <>
@@ -1247,8 +1246,7 @@ export default function App() {
               )}
             </div>
             
-            {deviceRole === 'teacher' && (
-              <div className="cfl-stamp-btn-container">
+            <div className="cfl-stamp-btn-container">
                 <button
                   className={`cfl-stamp-btn ${teacherMode ? 'active' : ''} ${stamping ? 'stamping' : ''}`}
                   onClick={openStamp}
@@ -1258,7 +1256,6 @@ export default function App() {
                 </button>
                 <div className="cfl-stamp-label">{teacherMode ? '教師管理模式' : '檢視模式'}</div>
               </div>
-            )}
           </div>
 
           {/* 專戶儀表板 */}
