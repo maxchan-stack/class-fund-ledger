@@ -24,10 +24,7 @@ function doGet(e) {
     var action = e && e.parameter && e.parameter.action ? e.parameter.action : "";
     var auth = e && e.parameter && e.parameter.auth ? String(e.parameter.auth) : "";
     
-    // 取得名冊以利後續去識別化比對
-    var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
-    var rawRoster = readSheetData(rosterSheet);
-    
+    // ── 教師密碼驗證（輕量路徑：僅讀取 settings，不讀取名冊與帳本） ──
     if (action === "teacherAuth") {
       var isTeacherAuth = checkTeacherAuth(ss, auth);
       return ContentService.createTextOutput(JSON.stringify({
@@ -37,6 +34,7 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // ── 家長查詢驗證（優化路徑：名冊僅讀取一次並傳入 parentAuth） ──
     if (action === "parentAuth") {
       var seat = e && e.parameter && e.parameter.seat ? String(e.parameter.seat) : "";
       var pin = e && e.parameter && e.parameter.pin ? String(e.parameter.pin) : "";
@@ -47,7 +45,11 @@ function doGet(e) {
           .setMimeType(ContentService.MimeType.JSON);
       }
       
-      var authResult = parentAuth(ss, seat, pin, termParam);
+      // 讀取名冊一次，供 parentAuth 內部使用與後續去識別化
+      var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
+      var rawRoster = readSheetData(rosterSheet);
+      
+      var authResult = parentAuth(ss, seat, pin, termParam, rawRoster);
       // 對家長端的傳回內容中的備註與項目名稱進行去識別化過濾，確保不洩露其他同學姓名
       if (authResult.success && authResult.data) {
         if (authResult.data.expenses) {
@@ -65,6 +67,10 @@ function doGet(e) {
       return ContentService.createTextOutput(JSON.stringify(authResult))
         .setMimeType(ContentService.MimeType.JSON);
     }
+    
+    // ── 一般同步請求（需名冊） ──
+    var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
+    var rawRoster = readSheetData(rosterSheet);
     
     // 驗證是否為導師身分
     var isTeacher = checkTeacherAuth(ss, auth);
@@ -491,7 +497,7 @@ function deleteCredentialBySeat(ss, seat) {
 // ===================================================================
 
 // 主流程：驗證座號 + PIN，首次登入自動建立 PIN，成功後回傳去識別化的家長視角資料
-function parentAuth(ss, seat, pin, termParam) {
+function parentAuth(ss, seat, pin, termParam, cachedRoster) {
   var credSheet = getOrCreateSheet(ss, "credentials", ["seat", "pinHash", "updatedAt"]);
   var credentials = readSheetData(credSheet); // [{seat, pinHash, updatedAt}, ...]
 
@@ -521,9 +527,12 @@ function parentAuth(ss, seat, pin, termParam) {
     isNewSetup = true;
   }
 
-  // 確認該座號存在於名冊
-  var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
-  var roster = readSheetData(rosterSheet);
+  // 確認該座號存在於名冊（優先使用已快取的名冊，避免重複讀取）
+  var roster = cachedRoster;
+  if (!roster) {
+    var rosterSheet = getOrCreateSheet(ss, "roster", ["seat", "name"]);
+    roster = readSheetData(rosterSheet);
+  }
   var studentEntry = null;
   for (var j = 0; j < roster.length; j++) {
     if (String(roster[j].seat) === seat) {
